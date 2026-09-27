@@ -53,3 +53,7 @@ The workspace lives in `<project>/.claude/reel-studio/`. It holds `sources.json`
 - [reference/spec-format.md](reference/spec-format.md): scene types, fields, markup and the brand file.
 - [reference/craft.md](reference/craft.md): hooks, pacing, formats and captions.
 - [templates/example-spec.json](templates/example-spec.json): a starter reel.
+
+## License
+
+[MIT](LICENSE)

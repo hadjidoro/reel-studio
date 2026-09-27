@@ -4,6 +4,15 @@
   "private": true,
   "type": "module",
   "description": "Spec-driven vertical video (Reels/TikTok/Shorts) generator used by the reel-studio Claude Code skill.",
-  "bin": { "reel": "bin/reel.mjs" },
-  "dependencies": { "puppeteer-core": "^24.0.0" }
+  "bin": {
+    "reel": "bin/reel.mjs"
+  },
+  "dependencies": {
+    "puppeteer-core": "^24.0.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hadjidoro/reel-studio.git"
+  }
 }
