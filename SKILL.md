@@ -9,7 +9,7 @@ Spec-driven reel pipeline: **context → scripts → JSON specs → preview/stor
 Every reel is a JSON file; the engine turns it into animated brand-styled scenes (Chrome frame capture + ffmpeg).
 
 ```bash
-REEL=~/.claude/skills/reel-studio/bin/reel.mjs   # executable (node shebang); run from anywhere inside the project
+REEL=~/.claude/skills/reel-studio/bin/reel   # bash wrapper around reel.mjs; run from anywhere inside the project
 $REEL doctor            # first run: checks node, ffmpeg, Chrome; installs puppeteer-core into the skill once
 ```
 

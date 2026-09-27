@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Reel Studio CLI wrapper. Resolves its own location (through symlinks) and runs bin/reel.mjs with node.
+# Put this directory on PATH or symlink this file into ~/.local/bin, then run: reel doctor
+set -euo pipefail
+
+self="${BASH_SOURCE[0]}"
+while [ -L "$self" ]; do
+  dir="$(cd -P "$(dirname "$self")" && pwd)"
+  self="$(readlink "$self")"
+  [[ "$self" != /* ]] && self="$dir/$self"
+done
+dir="$(cd -P "$(dirname "$self")" && pwd)"
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "reel: node not found. Install Node 18 or later: https://nodejs.org" >&2
+  exit 127
+fi
+
+exec node "$dir/reel.mjs" "$@"

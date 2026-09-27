@@ -17,7 +17,13 @@ A [Claude Code](https://claude.com/claude-code) skill that plans, previews and r
 
 ```bash
 git clone https://github.com/hadjidoro/reel-studio ~/.claude/skills/reel-studio
-~/.claude/skills/reel-studio/bin/reel.mjs doctor   # installs puppeteer-core on first run
+~/.claude/skills/reel-studio/bin/reel doctor   # installs puppeteer-core on first run
+```
+
+To call `reel` from anywhere, put the `bin` folder on your `PATH` or symlink the script:
+
+```bash
+ln -s ~/.claude/skills/reel-studio/bin/reel ~/.local/bin/reel   # or any directory on your PATH
 ```
 
 To install for a single project only, clone into `<project>/.claude/skills/reel-studio` instead.
@@ -33,17 +39,18 @@ To install for a single project only, clone into `<project>/.claude/skills/reel-
 
 In Claude Code, inside any project, ask for something like *"make 6 reels for our Facebook page"*. The skill runs onboarding, gathers context, proposes scripts, previews them, and renders once you're happy.
 
-You can also run the command-line tool yourself:
+You can also run the command-line tool yourself, from anywhere inside the project:
 
 ```bash
-REEL=~/.claude/skills/reel-studio/bin/reel.mjs
-$REEL init --facebook https://facebook.com/mypage --website mysite.com --code .   # or a path, a GitHub URL, or none
-$REEL sources [sync]              # show sources, or pull the latest GitHub source
-$REEL preview --all --open        # player.html + storyboard.jpg per spec, plus out/index.html
-$REEL frames 03 --times 2,4.5     # exact stills
-$REEL render --all                # MP4 + cover + caption
-$REEL render 03 --voice Thomas    # with text-to-speech voiceover from each scene's "vo"
+reel init --facebook https://facebook.com/mypage --website mysite.com --code .   # or a path, a GitHub URL, or none
+reel sources [sync]              # show sources, or pull the latest GitHub source
+reel preview --all --open        # player.html + storyboard.jpg per spec, plus out/index.html
+reel frames 03 --times 2,4.5     # exact stills
+reel render --all                # MP4 + cover + caption
+reel render 03 --voice Thomas    # with text-to-speech voiceover from each scene's "vo"
 ```
+
+`bin/reel` is a small bash wrapper around `bin/reel.mjs`. If you skipped the `PATH` step, use the full path instead of `reel`.
 
 The workspace lives in `<project>/.claude/reel-studio/`. It holds `sources.json`, `brand.json`, `context.md`, `specs/` and `assets/`. The `sources/` and `out/` folders are git-ignored.
 
