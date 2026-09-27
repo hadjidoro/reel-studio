@@ -8,10 +8,18 @@ description: "Plans, previews and renders short vertical promo videos (Facebook/
 Spec-driven reel pipeline: **context → scripts → JSON specs → preview/storyboard → iterate → MP4**.
 Every reel is a JSON file; the engine turns it into animated brand-styled scenes (Chrome frame capture + ffmpeg).
 
+The CLI is `bin/reel` in the folder that holds this SKILL.md. The skill may be installed per project or globally, and for any agent (`npx skills add hadjidoro/reel-studio`, or a plain `git clone`), so locate it first:
+
 ```bash
-REEL=~/.claude/skills/reel-studio/bin/reel   # bash wrapper around reel.mjs; run from anywhere inside the project
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+for d in "$ROOT"/.claude "$ROOT"/.agents ~/.claude ~/.agents ~/.codex ~/.cursor; do
+  [ -x "$d/skills/reel-studio/bin/reel" ] && REEL="$d/skills/reel-studio/bin/reel" && break
+done
+: "${REEL:=$(command -v reel)}"   # or set REEL to <this skill folder>/bin/reel yourself
 $REEL doctor            # first run: checks node, ffmpeg, Chrome; installs puppeteer-core into the skill once
 ```
+
+Reuse `$REEL` for every command below; it works from anywhere inside the project.
 
 Workspace (per project): `.claude/reel-studio/` → `sources.json` (Facebook page, website, code location), `brand.json`, `context.md`, `specs/*.json`, `assets/`, `sources/` + `out/` (git-ignored).
 Override with `--ws DIR` or `$REEL_WS`.

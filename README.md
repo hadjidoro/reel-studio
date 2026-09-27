@@ -15,18 +15,30 @@ A [Claude Code](https://claude.com/claude-code) skill that plans, previews and r
 
 ## Install
 
-```bash
-git clone https://github.com/hadjidoro/reel-studio ~/.claude/skills/reel-studio
-~/.claude/skills/reel-studio/bin/reel doctor   # installs puppeteer-core on first run
-```
-
-To call `reel` from anywhere, put the `bin` folder on your `PATH` or symlink the script:
+**With the [skills.sh](https://skills.sh/) CLI** (Claude Code, Codex, Cursor, Copilot, Gemini CLI and others):
 
 ```bash
-ln -s ~/.claude/skills/reel-studio/bin/reel ~/.local/bin/reel   # or any directory on your PATH
+npx skills add hadjidoro/reel-studio        # into this project
+npx skills add hadjidoro/reel-studio -g     # or globally, for every project
 ```
 
-To install for a single project only, clone into `<project>/.claude/skills/reel-studio` instead.
+**Or with git**, into your agent's skills folder:
+
+```bash
+git clone https://github.com/hadjidoro/reel-studio ~/.claude/skills/reel-studio   # or <project>/.claude/skills/reel-studio
+```
+
+Then run the doctor once. It checks the requirements and installs `puppeteer-core` into the skill folder:
+
+```bash
+<skill folder>/bin/reel doctor              # e.g. ~/.claude/skills/reel-studio/bin/reel doctor
+```
+
+Optionally put `reel` on your `PATH` so you can call it from anywhere:
+
+```bash
+ln -s <skill folder>/bin/reel ~/.local/bin/reel   # or any directory on your PATH
+```
 
 **Requirements:**
 - Node 18 or later
@@ -37,7 +49,7 @@ To install for a single project only, clone into `<project>/.claude/skills/reel-
 
 ## Use
 
-In Claude Code, inside any project, ask for something like *"make 6 reels for our Facebook page"*. The skill runs onboarding, gathers context, proposes scripts, previews them, and renders once you're happy.
+In Claude Code (or any agent that loads the skill), inside any project, ask for something like *"make 6 reels for our Facebook page"*. The skill runs onboarding, gathers context, proposes scripts, previews them, and renders once you're happy.
 
 You can also run the command-line tool yourself, from anywhere inside the project:
 
@@ -50,7 +62,7 @@ reel render --all                # MP4 + cover + caption
 reel render 03 --voice Thomas    # with text-to-speech voiceover from each scene's "vo"
 ```
 
-`bin/reel` is a small bash wrapper around `bin/reel.mjs`. If you skipped the `PATH` step, use the full path instead of `reel`.
+`bin/reel` is a small bash wrapper around `bin/reel.mjs`. If you skipped the `PATH` step, use `<skill folder>/bin/reel` instead of `reel`. The agent finds the skill folder itself; see [SKILL.md](SKILL.md).
 
 The workspace lives in `<project>/.claude/reel-studio/`. It holds `sources.json`, `brand.json`, `context.md`, `specs/` and `assets/`. The `sources/` and `out/` folders are git-ignored.
 
