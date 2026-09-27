@@ -1,0 +1,9 @@
+{
+  "name": "reel-studio",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Spec-driven vertical video (Reels/TikTok/Shorts) generator used by the reel-studio Claude Code skill.",
+  "bin": { "reel": "bin/reel.mjs" },
+  "dependencies": { "puppeteer-core": "^24.0.0" }
+}

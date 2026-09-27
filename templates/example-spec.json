@@ -1,0 +1,12 @@
+{
+  "title": "Example: problem → how it works → CTA",
+  "audience": "new users",
+  "caption": "Caption for the post. #hashtag",
+  "scenes": [
+    { "type": "hook", "kicker": "For drivers", "title": "Still looking for **a car?**", "sub": "There's a faster way.", "vo": "Still looking for a car?" },
+    { "type": "list", "title": "How it works", "mark": "num", "items": [["Pick your area", "filter in one tap"], ["Browse offers", "prices shown upfront"], ["Message the owner", "directly, no fees"]] },
+    { "type": "facts", "kicker": "Why it works", "facts": [["0 %", "commission", "good"], ["2 min", "to post an ad", "accent"]] },
+    { "type": "statement", "lines": ["You call.", "You agree.", "You drive."] },
+    { "type": "cta", "title": "Try it **free:**" }
+  ]
+}

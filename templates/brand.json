@@ -1,0 +1,23 @@
+{
+  "name": "Acme",
+  "wordmark": ["AC", "ME"],
+  "url": "acme.com",
+  "endLine": "The tagline, **with an accent.**",
+  "tagline": "Free · No middleman",
+  "lang": "en",
+  "font": { "family": "Inter", "google": "Inter:wght@400;500;600;700;800;900" },
+  "colors": {
+    "bg": "#1d1a17",
+    "bg2": "#2a2521",
+    "text": "#fbf7f2",
+    "muted": "#b3a79c",
+    "accent": "#e8a13c",
+    "accent2": "#ec3013",
+    "success": "#1f9d55",
+    "onAccent": "#1b1206",
+    "surface": "#fbf7f2",
+    "ink": "#2e241d"
+  },
+  "numberGroup": " ",
+  "watermark": true
+}
