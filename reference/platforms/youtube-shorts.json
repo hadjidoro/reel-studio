@@ -1,0 +1,12 @@
+{
+  "id": "youtube-shorts",
+  "name": "YouTube Shorts",
+  "aliases": ["youtube", "shorts", "yt"],
+  "canvas": [1080, 1920],
+  "duration": { "ideal": [20, 45], "max": 180 },
+  "safe": { "top": 140, "bottom": 380, "right": { "width": 130, "from": 900, "to": 1560 } },
+  "caption": { "visible": 100, "max": 100, "hashtags": [1, 3] },
+  "tone": "The caption becomes the title (100 characters max): make it searchable. Up to 3 hashtags are shown above the title.",
+  "checked": "2026-10",
+  "sources": ["https://postplanify.com/blog/social-media-safe-zones-2026-complete-guide", "iart-ai/freelance-motion-skills video-delivery-specs"]
+}

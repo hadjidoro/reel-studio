@@ -131,6 +131,10 @@ Create the campaign:
 $REEL campaign new "Back to school promo" --platforms facebook,tiktok --mode series --count 3
 ```
 
+Read the preset of each chosen platform in `reference/platforms/<id>.json`. It gives the platform's safe zones, length range, caption limits, hashtag range and tone. One master video serves every platform, so:
+- aim for a length inside every platform's sweet spot where possible, and say so when one platform is a stretch;
+- write one caption per platform in its tone.
+
 ## 3. Concepts ✋
 
 Present the N concepts as a table with these columns:
@@ -154,6 +158,7 @@ Write one spec per approved concept in the campaign's `specs/NN-slug.json`. Read
 - Keep to the brand voice and to facts from `context.md`.
 - Mock UIs only: never real users' names, numbers or photos.
 - For **variants**, write each one as a full spec file, then note in `brief.md` which hook each file tests.
+- Give each spec a `captions` entry for every platform it targets, following that platform's preset.
 
 Preview the specs:
 
@@ -161,7 +166,14 @@ Preview the specs:
 $REEL preview --all            # the newest campaign; --campaign NAME for another
 ```
 
-**QA every storyboard yourself before showing it** (Read `out/<id>/storyboard.jpg`). Look for:
+`preview` prints a ⚠ for each problem it finds:
+- text under any chosen platform's UI zones (frames marked ⚠ on the storyboard);
+- a length outside a platform's range;
+- caption problems.
+
+Fix them all before going further.
+
+**Also QA every storyboard yourself before showing it** (Read `out/<id>/storyboard.jpg`). Look for:
 - text that overflows or wraps badly;
 - content under the safe zones;
 - taps that miss their target;
@@ -185,7 +197,7 @@ $REEL render --all                      # voice from brand.json; --voice NAME to
 Each video gets:
 - `out/<id>/<id>.mp4` (1080×1920, 30 fps, H.264 + AAC);
 - `cover.jpg`;
-- the caption file(s).
+- `caption-<platform>.txt` for each platform.
 
 The voiceover warns when a line doesn't fit its scene. When that happens, shorten the line or raise the scene's `dur`. For a recorded voice or a music bed, set `"audio": "assets/file.mp3"`.
 
@@ -193,7 +205,7 @@ To deliver:
 1. Copy the MP4s where the user wants them. Ask once; by default, leave them in `out/`.
 2. Add the videos to "Already published" in `context.md`.
 3. Log the delivery in `brief.md`.
-4. Report a table of videos with length and caption.
+4. Report a table of videos with length and the caption for each platform.
 5. Flag time-sensitive facts such as prices, dates and commissions.
 
 ## Rules
