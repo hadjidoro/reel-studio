@@ -1,14 +1,26 @@
 ---
 name: reel-studio
-description: "Plans, previews and renders short vertical promo videos (Facebook/Instagram Reels, TikTok, YouTube Shorts) for a product or website. Onboards by asking for the Facebook page, the website and the source code (this project, a local folder or a GitHub URL), gathers context from them, proposes reel scripts, builds a scrubbable HTML preview and storyboard to iterate on, then renders 1080×1920 MP4s with covers and captions (optional TTS voiceover). Use when the user asks for reels, shorts, TikToks, social videos, promo/marketing videos, or more videos for their page."
+description: "Collaborative studio for short vertical promo videos (Facebook/Instagram Reels, TikTok, YouTube Shorts, LinkedIn). Interviews the user for context and useful links, asks which platforms, which theme and how many videos, gets concepts and storyboards approved, then renders 1080×1920 MP4s with a caption per platform. Run with /reel-studio."
+argument-hint: "[theme or request, optional]"
+disable-model-invocation: true
 ---
 
 # Reel Studio
 
-Spec-driven reel pipeline: **context → scripts → JSON specs → preview/storyboard → iterate → MP4**.
-Every reel is a JSON file; the engine turns it into animated brand-styled scenes (Chrome frame capture + ffmpeg).
+Collaborative, spec-driven video pipeline:
+**profile (context + links) → campaign (platforms, theme, count) → concepts ✋ → specs → storyboards ✋ → MP4s**
 
-The CLI is `bin/reel` in the folder that holds this SKILL.md. The skill may be installed per project or globally, and for any agent (`npx skills add hadjidoro/reel-studio`, or a plain `git clone`), so locate it first:
+✋ marks the two points where you stop and wait for the user's approval. Every video is a JSON spec, and the engine turns it into animated, brand-styled scenes (Chrome frame capture + ffmpeg).
+
+The user started this skill on purpose. Run the steps below in order. If they passed arguments (e.g. `/reel-studio 3 tiktoks about our new pricing`), use them to pre-fill answers, but still confirm them.
+
+## Talking to the user
+- Use plain language. Say "video", "storyboard", "caption" and "safe area". Avoid jargon such as spec, fps and JSON unless the user uses it first.
+- Ask, don't guess. Each question round ends your turn, and you wait for the answer.
+- Keep the user's own words. Whatever they tell you about the business goes into `context.md` under "In the user's words".
+
+## Setup: locate the CLI
+The CLI is `bin/reel` in the folder that holds this SKILL.md:
 
 ```bash
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
@@ -16,87 +28,176 @@ for d in "$ROOT"/.claude "$ROOT"/.agents ~/.claude ~/.agents ~/.codex ~/.cursor;
   [ -x "$d/skills/reel-studio/bin/reel" ] && REEL="$d/skills/reel-studio/bin/reel" && break
 done
 : "${REEL:=$(command -v reel)}"   # or set REEL to <this skill folder>/bin/reel yourself
-$REEL doctor            # first run: checks node, ffmpeg, Chrome; installs puppeteer-core into the skill once
+$REEL doctor            # checks node, ffmpeg, Chrome; installs puppeteer-core into the skill once
 ```
 
-Reuse `$REEL` for every command below; it works from anywhere inside the project.
+- If ffmpeg or Chrome is missing, give the user the install command and don't try to work around it.
+- Reuse `$REEL` for every command. It works from anywhere inside the project.
 
-Workspace (per project): `.claude/reel-studio/` → `sources.json` (Facebook page, website, code location), `brand.json`, `context.md`, `specs/*.json`, `assets/`, `sources/` + `out/` (git-ignored).
-Override with `--ws DIR` or `$REEL_WS`.
+The workspace is per project: `.claude/reel-studio/`. Override it with `--ws DIR` or `$REEL_WS`. **Nothing in the workspace is versioned**, because its own `.gitignore` ignores everything.
 
-## Workflow
+```
+.claude/reel-studio/
+  brand.json  context.md  sources.json  assets/  sources/     ← profile, reused across runs
+  campaigns/<YYYY-MM-DD>-<theme>/
+    campaign.json  brief.md  specs/NN-slug.json  out/          ← one folder per run
+```
 
-### 1. Install & onboard (once per workspace)
-1. `$REEL doctor`. If ffmpeg or Chrome is missing, give the user the install command and don't work around it.
-2. If `.claude/reel-studio/sources.json` exists, run `$REEL sources`, read `brand.json` and `context.md`, and skip to step 3. Re-run onboarding only when a source is missing or the user wants to change one.
-3. **Ask the onboarding questions.** Ask them all in one go, and don't guess the answers.
-   - **Facebook page URL.** This is where the reels will be posted. It tells you the page's audience, tone and what already performs. The user can answer "none".
-   - **Website URL.** This is the live product. Offer the one found in the code, such as `APP_URL`, `.env.example` or the README, as the likely answer.
-   - **Where is the source code?** Ask with AskUserQuestion using these options:
-     - **This project.** Recommended when the working directory is the product's repo.
-     - **Another local folder.** The user types the path.
-     - **A GitHub repo.** The user types the URL. `https://github.com/org/repo`, `…/tree/branch` and `github:org/repo` all work.
-     - **No code, website only.**
+## 1. Profile: context and links
 
-   Put the URL questions in the same message as that question, or use AskUserQuestion's free-text "Other" answer.
-4. Record the answers. Re-running with any single flag updates only that answer.
-   ```bash
-   $REEL init --facebook https://facebook.com/mypage --website https://mysite.com --code .            # this project
-   $REEL init --facebook none --website mysite.com --code ~/code/other-app                          # another folder
-   $REEL init --facebook … --website … --code https://github.com/org/repo [--ref main]               # GitHub (shallow clone)
-   $REEL init --facebook … --website … --code none                                                  # website only
-   ```
-   - A GitHub repo is shallow-cloned into `.claude/reel-studio/sources/<repo>`, which is git-ignored.
-   - A private repo falls back to `gh`. If that fails, ask the user to run `gh auth login` and then `$REEL sources sync`.
-   - `$REEL sources sync` refreshes the clone before a new batch.
-   - When the user isn't inside a project, the workspace is created in the current folder.
+Run `$REEL profile`.
 
-### 2. Gather context: write `context.md` and `brand.json`
-Build a fact base the reels can safely draw from. **Every number, claim or label shown in a reel must trace to a line in `context.md` with its source.** Record which sources were used and when at the top of `context.md`.
-- **Source code.** Read the folder that `$REEL sources` prints.
-  - Look at the README, routes and page templates or components: hero copy, CTAs and exact UI labels.
-  - Also check enums and labels, i18n strings, markdown, blog or guide content, pricing, and config such as `APP_URL`.
-  - When the codebase is large, delegate a broad sweep to an Explore agent pointed at that folder.
-- **Website.** WebFetch the homepage, the pages linked from the main navigation, and `/sitemap.xml` if it exists. Use them to confirm the copy is live and to pick up claims that aren't in the code. The live site wins when it disagrees with the code, and you should note the conflict.
-- **Facebook page.** Note the page name, category, about text, recent post topics, tone, which posts and reels get engagement, and recurring questions in comments. Those questions are ready-made reel ideas.
-  - Facebook usually blocks anonymous fetches. Try WebFetch first.
-  - If that fails and browser tools such as Claude in Chrome are connected, read the page in the user's logged-in browser.
-  - Otherwise ask the user to paste the about text and 3–5 recent posts. Never post, comment or message on the user's behalf.
-- **Brand.**
-  - Colors come from CSS tokens or the Tailwind theme.
-  - For the font, use the Google Fonts name if there is one. Otherwise copy local font files into `assets/` and reference them via `font.files`.
-  - Use a two-part wordmark for a two-tone logo, or a logo file.
-  - Also record the domain, a one-line end-card slogan, and the tone: formality, tu/vous, language.
-  - Where code and page differ, the Facebook page's profile and cover images are a good cross-check for colors.
-- **Assets.** Copy usable illustrations, logos and screenshots into `assets/`. SVGs scale best. Note what each shows and good `bgPos` values.
-- **Rules.** Record the user's constraints under a "Do not" heading, for example brands not to name. Honour them in every spec.
-- Keep an "Already published" table so new ideas don't repeat. Seed it from the Facebook page's existing reels.
+**A profile exists** (exit code 0). Show the summary in a few lines: brand, language, voiceover, links, date of last fetch, number of published videos and campaigns. Then ask with AskUserQuestion:
+- **Still valid**: go to step 2.
+- **Edit something**: ask what changed, update it, and re-fetch only what's affected.
+- **Re-fetch links**: the site or pages have changed. Do the fetch in 1c below.
 
-### 3. Propose scripts
-Present ideas as a table: **#, audience, hook (exact on-screen words), beats (scene types), why it works, caption.** Default 6–10 ideas, mixing formats (see `reference/craft.md`): product demo, myth vs fact, checklist, calculation, versus, rules/red flags, local/coverage, FAQ, social proof. Skip published topics.
-If the user already said what to make ("make 10 more"), don't wait for approval — pick the strongest and continue.
+Old workspaces are converted automatically, so `profile` handles them too.
 
-### 4. Write specs
-One file per reel: `specs/NN-slug.json` (numbered to continue the existing sequence). Scene types, fields and markup: **`reference/spec-format.md`** — read it before writing specs. Keep to the brand voice and to facts from `context.md`. Mock UIs only: never real users' names, numbers or photos.
+**No profile** (exit code 2). Onboard as follows:
 
-### 5. Preview & iterate
+**1a. Context.** Ask one open question in plain text, inviting the user to say as much or as little as they like:
+- what the business or product is, and who it's for;
+- the goal of these videos (awareness, sign-ups, sales, an event…);
+- tone and language (formality, tu/vous);
+- anything to avoid ("Do not" rules);
+- whether they want a voiceover (macOS voices) or silent videos with on-screen text.
+
+Wait for the answer. Ask a follow-up only if something essential is missing.
+
+**1b. Useful links.** Ask for every link that helps, in one free-text message:
+- website and landing pages;
+- social pages (Facebook, Instagram, TikTok, LinkedIn, YouTube);
+- source code (this project, a local folder, a GitHub URL);
+- docs or Drive folders;
+- competitors and videos they like.
+
+Suggest the URL found in the code (`APP_URL`, `.env.example`, README) and "this project" for code when the working directory is the product's repo.
+
+Record the links:
 ```bash
-$REEL preview 07 08 09        # or --all; add --open to open the players in the browser
+$REEL init --link https://mysite.com --link https://facebook.com/mypage --link . \
+           --link competitor=https://tiktok.com/@rival --link inspiration=https://… \
+           --note "one-line summary of the user's context"
 ```
-- **QA every storyboard yourself** (Read `out/<id>/storyboard.jpg`): text overflowing or wrapping badly, content under the safe zones (top ~220 px, bottom ~420 px, right ~150 px), taps missing their target, empty/half-faded frames, facts that don't match `context.md`. Fix and re-preview before showing the user.
-- Give the user `out/index.html` (gallery of all storyboards, players, captions) and the per-reel `player.html` (Play/scrub, arrow keys frame-step, scene jump, **Safe zones** overlay). They refresh after each `preview`.
-- Iterate on feedback by editing the spec, never the generated HTML. Use `$REEL frames <spec> --times 4.2,6` to inspect exact moments.
+- Each link's type is detected (website, facebook, instagram, tiktok, linkedin, youtube, x, docs, github, local).
+- `competitor=` and `inspiration=` tag links that aren't the user's own.
+- `--unlink URL` removes a link.
+- GitHub repos are shallow-cloned into `sources/`. A private repo falls back to `gh`; if that fails, ask the user to run `gh auth login`, then `$REEL sources sync`.
 
-### 6. Render & deliver
+**1c. Fetch the links and write the profile.** Build a fact base the videos can safely draw from, then run `$REEL sources fetched`.
+
+**Every number, claim or label shown in a video must trace to a line in `context.md` that names its source.**
+
+- **The user's words.** Write them into "In the user's words", and turn their don'ts into the "Do not" list.
+- **Code** (`local` and `github` links). Look at:
+  - the README, routes and page templates or components: hero copy, CTAs and exact UI labels;
+  - enums and labels, i18n strings, pricing and config.
+
+  For large codebases, delegate the sweep to an Explore agent.
+- **Website.** WebFetch the homepage, the pages in the main navigation and `/sitemap.xml`. When the live site and the code disagree, the live site wins; note the conflict.
+- **Social pages.** Record:
+  - audience and tone;
+  - posts or videos that performed;
+  - recurring questions in comments (ready-made video ideas);
+  - existing videos, which seed "Already published".
+
+  Social networks usually block anonymous fetches. Try WebFetch first, then the user's logged-in browser if browser tools are connected, else ask the user to paste the about text and 3–5 recent posts.
+
+  Never post, comment or message on the user's behalf.
+- **Docs and Drive.** Read them if they're accessible; otherwise ask the user to export or paste them.
+- **Competitors and inspiration.** Note what to learn and what to avoid under "Competitors & inspiration". Never copy their branding.
+- **Brand (`brand.json`).**
+  - Colors come from CSS tokens or the Tailwind theme, cross-checked against the social profile and cover images.
+  - Font: the Google Fonts name, or local files copied into `assets/` and listed in `font.files`.
+  - A two-part wordmark, or a logo file.
+  - Also set `url`, `endLine`, `tagline`, `lang`, and `voice`: a macOS voice name when voiceover is on, `null` when it's off.
+- **Assets.** Copy usable logos, illustrations, screenshots and product photos into `assets/`. Note what each one shows.
+
+## 2. Campaign: platforms, theme, count
+
+Ask everything in **one AskUserQuestion call** with these questions:
+
+1. **Platforms** (multiSelect): Facebook Reels, Instagram Reels, TikTok, YouTube Shorts, LinkedIn. Pre-select the platforms whose pages are in the links.
+2. **Theme**: offer 3–5 themes drawn from the profile, such as a new feature, an offer, a seasonal hook, a recurring customer question, or a gap in "Already published". The user can type their own with "Other".
+3. **Kind**:
+   - **Series (Recommended)**: N different angles on the theme (problem, demo, proof, offer…).
+   - **Variants**: N versions of one message with different hooks, for A/B testing.
+4. **How many**: 3 (Recommended), 1, 5, or 10 at most.
+
+Create the campaign:
+
 ```bash
-$REEL render --all                      # silent (user adds a trending sound in the app)
-$REEL render 07 --voice Thomas          # macOS TTS from each scene's "vo" (say -v '?' lists voices)
+$REEL campaign new "Back to school promo" --platforms facebook,tiktok --mode series --count 3
 ```
-Outputs `out/<id>/<id>.mp4` (1080×1920, 30 fps, H.264 + AAC), `cover.jpg`, `caption.txt`. Voiceover warns when a line doesn't fit its scene — shorten the line or raise the scene `dur`. A recorded voice or music bed: set `"audio": "assets/file.mp3"` (or `{ "file", "volume" }`).
-Copy the MP4s where the user wants them (ask once; default: leave in `out/`), update "Already published" in `context.md`, and report a table of reels with duration + caption. Flag any fact that is time-sensitive (prices, commissions, dates).
+
+## 3. Concepts ✋
+
+Present the N concepts as a table with these columns:
+- **#**
+- **angle**
+- **hook**: the exact on-screen words
+- **scenes**: as scene types
+- **length**
+- **platform notes**
+
+Follow these rules:
+- **Series**: mix the formats in `reference/craft.md`, use one angle per video, and skip topics in "Already published".
+- **Variants**: share one body, and change only the hook (and the CTA if useful). Make the hooks genuinely different, e.g. question vs number vs bold claim.
+- Ground every concept in `context.md`.
+
+**Stop and wait.** The user replies in free text, such as "ok", "drop 2" or "3: punchier hook, mention the price". Revise until they approve. Then fill "Angle" and "Concepts (approved)" in the campaign's `brief.md`, and log the feedback there.
+
+## 4. Specs and storyboards ✋
+
+Write one spec per approved concept in the campaign's `specs/NN-slug.json`. Read **`reference/spec-format.md`** before writing specs.
+- Keep to the brand voice and to facts from `context.md`.
+- Mock UIs only: never real users' names, numbers or photos.
+- For **variants**, write each one as a full spec file, then note in `brief.md` which hook each file tests.
+
+Preview the specs:
+
+```bash
+$REEL preview --all            # the newest campaign; --campaign NAME for another
+```
+
+**QA every storyboard yourself before showing it** (Read `out/<id>/storyboard.jpg`). Look for:
+- text that overflows or wraps badly;
+- content under the safe zones;
+- taps that miss their target;
+- empty or half-faded frames;
+- facts that don't match `context.md`.
+
+Fix them and re-preview.
+
+Use `$REEL frames <spec> --times 4.2,6` to inspect exact moments.
+
+Then give the user `out/index.html`. It's a gallery of every storyboard, linking to each player, where they can play, scrub, step frame by frame and toggle the **Safe zones** overlay.
+
+**Stop and wait.** The user approves everything, or lists edits per video. Iterate by editing specs, never the generated HTML. Render only the approved videos.
+
+## 5. Render and deliver
+
+```bash
+$REEL render --all                      # voice from brand.json; --voice NAME to override, "voice": false in a spec to silence it
+```
+
+Each video gets:
+- `out/<id>/<id>.mp4` (1080×1920, 30 fps, H.264 + AAC);
+- `cover.jpg`;
+- the caption file(s).
+
+The voiceover warns when a line doesn't fit its scene. When that happens, shorten the line or raise the scene's `dur`. For a recorded voice or a music bed, set `"audio": "assets/file.mp3"`.
+
+To deliver:
+1. Copy the MP4s where the user wants them. Ask once; by default, leave them in `out/`.
+2. Add the videos to "Already published" in `context.md`.
+3. Log the delivery in `brief.md`.
+4. Report a table of videos with length and caption.
+5. Flag time-sensitive facts such as prices, dates and commissions.
 
 ## Rules
-- Facts come from `context.md` only; if a reel needs a fact you don't have, find a source or drop the claim.
-- Don't use other companies' logos or imitate their branding; naming them in text for comparison is fine unless a "Do not" rule says otherwise.
-- Keep workspace files in `.claude/reel-studio/`; don't add files elsewhere in the project.
-- The engine lives in the skill (`engine/`, `bin/`). Improve it there when a scene type is missing — or use the `html` scene type for one-offs.
+- Facts come from `context.md` only. If a video needs a fact you don't have, find a source or drop the claim.
+- Don't use other companies' logos or imitate their branding. Naming them in text for comparison is fine unless a "Do not" rule says otherwise.
+- Keep workspace files in `.claude/reel-studio/`, and don't add files elsewhere in the project.
+- The engine lives in the skill (`engine/`, `bin/`). Improve it there when a scene type is missing, or use the `html` scene type for one-offs.

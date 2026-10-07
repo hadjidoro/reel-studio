@@ -1,18 +1,18 @@
 # Reel context
 
-Filled in by Claude from the codebase and the live site. Every claim used in a reel must trace back to a line here.
+Claude fills this in from the user's own words and the links in `sources.json`. Every claim used in a video must trace back to a line here.
+
+## In the user's words
+What the user said about the business, audience and goals, kept close to their wording.
 
 ## Sources used
-| Source | Location | Read on |
-|---|---|---|
-| Source code | (from `reel sources`) | |
-| Website | | |
-| Facebook page | | |
+| Source | Type | Location | Read on |
+|---|---|---|---|
 
-## Facebook page insights
+## Social pages
 - Audience & tone:
-- Posts/reels that performed:
-- Recurring questions in comments (reel ideas):
+- Posts/videos that performed:
+- Recurring questions in comments (video ideas):
 
 ## Product
 - What it does (one sentence):
@@ -22,9 +22,17 @@ Filled in by Claude from the codebase and the live site. Every claim used in a r
 
 ## Voice
 - Language, formality (tu/vous, you), tone:
+- Voiceover: on/off (voice name in brand.json `voice`)
 - Words the brand uses / avoids:
 
-## Facts & numbers (with source file or URL)
+## Competitors & inspiration
+| Link | What to learn or avoid |
+|---|---|
+
+## Do not
+-
+
+## Facts
 | Fact | Source |
 |---|---|
 
@@ -32,5 +40,5 @@ Filled in by Claude from the codebase and the live site. Every claim used in a r
 - Illustrations / screenshots / logos (paths under assets/):
 
 ## Already published
-| Spec | Topic | Date |
-|---|---|---|
+| Campaign | Spec | Topic | Date |
+|---|---|---|---|
