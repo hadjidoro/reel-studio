@@ -1,17 +1,33 @@
 # Reel Studio
 
-A [Claude Code](https://claude.com/claude-code) skill that plans, previews and renders short vertical promo videos (Facebook/Instagram Reels, TikTok, YouTube Shorts) for any product or website.
+A collaborative [Claude Code](https://claude.com/claude-code) skill for short vertical promo videos: Facebook and Instagram Reels, TikTok, YouTube Shorts and LinkedIn. It works for any product or website.
 
-**context → scripts → JSON specs → preview & storyboard → iterate → MP4**
+**profile (context + links) → campaign (platforms, theme, count) → concepts ✋ → storyboards ✋ → MP4s**
 
-- **Onboarding:** asks for your Facebook page, website, and where the source code is (this project, a local folder, or a GitHub URL). It then builds a sourced fact base and brand file from them.
-- **Scripts:** proposes reel ideas with hooks, scene beats and captions, and skips topics you've already published.
-- **Specs:** each reel is a small JSON file. There are 13 scene types, from hooks and checklists to money calculations, chats, versus screens and phone-app walkthroughs, all themed with your brand colors, font and logo.
+- **Runs only when you call it:** type `/reel-studio`. Claude never starts it on its own.
+- **Interviews you first:**
+  - your context, in your own words;
+  - every useful link: website, social pages, code, docs, competitors, inspiration;
+  - which platforms, which theme, series or A/B variants, and how many videos.
+
+  The profile is saved and confirmed at the start of each run.
+- **Two approval points:** you approve the concepts, then the storyboards. Nothing renders before both.
+- **One master video, every platform:** platform presets supply safe zones, length ranges, caption limits and tone. Preview flags text under any platform's on-screen buttons and captions, lengths out of range, and caption problems. Render writes one caption per platform.
+- **Engine:** 17 brand-themed scene types:
+  - hooks, numbers, checklists and money calculations
+  - chats, versus screens and phone walkthroughs
+  - Ken Burns photo slideshows, price/promo reveals and testimonials
+
+  On top of those:
+  - word-by-word subtitles synced to the voiceover;
+  - kinetic text reveals;
+  - push, wipe, zoom and whip transitions.
 - **Preview:**
-  - A browser player lets you play, scrub, step frame by frame, jump between scenes and show a safe-zone overlay.
-  - A storyboard image shows every scene at a glance.
-  - A gallery page lists all reels with their captions.
-- **Render:** produces 1080×1920 30 fps H.264 MP4s, each with a cover and a caption file. A macOS text-to-speech voiceover, your own recorded voice or a music bed are optional.
+  - a browser player you can scrub, with a safe-zone overlay;
+  - a storyboard image per video;
+  - a gallery page per campaign.
+- **Render:** 1080×1920 30 fps H.264 MP4s, each with a cover image. The voiceover can be macOS TTS, your own recording, or a music bed.
+- **Nothing is versioned:** the workspace's own `.gitignore` keeps the profile, specs and renders out of git.
 
 ## Install
 
@@ -49,28 +65,44 @@ ln -s <skill folder>/bin/reel ~/.local/bin/reel   # or any directory on your PAT
 
 ## Use
 
-In Claude Code (or any agent that loads the skill), inside any project, ask for something like *"make 6 reels for our Facebook page"*. The skill runs onboarding, gathers context, proposes scripts, previews them, and renders once you're happy.
+In Claude Code, inside any project, type:
+
+```
+/reel-studio
+/reel-studio 3 TikToks about our new pricing     # arguments pre-fill the answers
+```
 
 You can also run the command-line tool yourself, from anywhere inside the project:
 
 ```bash
-reel init --facebook https://facebook.com/mypage --website mysite.com --code .   # or a path, a GitHub URL, or none
-reel sources [sync]              # show sources, or pull the latest GitHub source
-reel preview --all --open        # player.html + storyboard.jpg per spec, plus out/index.html
+reel init --link mysite.com --link https://facebook.com/mypage --link . --link competitor=https://tiktok.com/@rival
+reel profile                     # summary of the saved profile
+reel campaign new "Back to school" --platforms facebook,tiktok,linkedin --mode series --count 3
+reel preview --all --open        # player.html + storyboard.jpg per video, plus the campaign gallery, with safe-zone and caption checks
 reel frames 03 --times 2,4.5     # exact stills
-reel render --all                # MP4 + cover + caption
-reel render 03 --voice Thomas    # with text-to-speech voiceover from each scene's "vo"
+reel render --all                # MP4 + cover + caption-<platform>.txt
+reel render 03 --voice Thomas    # with text-to-speech voiceover (and subtitles if the spec enables them)
+reel campaign list               # list campaigns; any command takes --campaign NAME, and the newest is the default
 ```
 
 `bin/reel` is a small bash wrapper around `bin/reel.mjs`. If you skipped the `PATH` step, use `<skill folder>/bin/reel` instead of `reel`. The agent finds the skill folder itself; see [SKILL.md](SKILL.md).
 
-The workspace lives in `<project>/.claude/reel-studio/`. It holds `sources.json`, `brand.json`, `context.md`, `specs/` and `assets/`. The `sources/` and `out/` folders are git-ignored.
+The workspace lives in `<project>/.claude/reel-studio/`, and git ignores all of it:
+
+```
+brand.json  context.md  sources.json  assets/  sources/      the profile, reused across runs
+campaigns/<date>-<theme>/campaign.json  brief.md  specs/  out/   one folder per run
+```
+
+Workspaces from v1 are converted automatically. Their links become the new link list, and existing specs move into an `earlier-reels` campaign.
 
 ## Docs
 
 - [SKILL.md](SKILL.md): the workflow Claude follows.
 - [reference/spec-format.md](reference/spec-format.md): scene types, fields, markup and the brand file.
 - [reference/craft.md](reference/craft.md): hooks, pacing, formats and captions.
+- [reference/platforms/](reference/platforms/): per-platform presets (safe zones, length, caption limits, tone).
+- [reference/motion/](reference/motion/): hooks and retention, typography and subtitles, format recipes, motion principles. Adapted from [iart-ai's MIT-licensed motion skills](https://github.com/iart-ai/motion-skills); see [ATTRIBUTION](reference/motion/ATTRIBUTION.md).
 - [templates/example-spec.json](templates/example-spec.json): a starter reel.
 
 ## License
