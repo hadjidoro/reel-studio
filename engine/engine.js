@@ -143,7 +143,7 @@
   };
   // Inside phone screens authors write data-t relative to their step; shift to scene-local time.
   function shiftTimes(html, by) {
-    return html.replace(/data-(t|o)="([\d.]+)"/g, (m, k, v) => `data-${k}="${(+v + by).toFixed(2)}"`);
+    return html.replace(/data-(t|o)=(["'])([\d.]+)\2/g, (m, k, q, v) => `data-${k}=${q}${(+v + by).toFixed(2)}${q}`);
   }
 
   T.html = sc => sc.html || '';
