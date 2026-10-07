@@ -14,6 +14,10 @@ A spec is a JSON file in `specs/`. The canvas is 1080×1920. Scenes play back to
   "voiceRate": 185,
   "audio": "assets/music.mp3 | { \"file\": \"…\", \"volume\": 0.2 }",
   "end": { "line": "override end-card line", "tagline": "…", "vo": "…" },
+  "subtitles": true,
+  "subtitleWords": 3,
+  "reveal": "words",
+  "transition": "fade",
   "watermark": true,
   "css": ".extra{…}",
   "scenes": [ { "type": "hook", "…": "…" } ]
@@ -24,6 +28,31 @@ A spec is a JSON file in `specs/`. The canvas is 1080×1920. Scenes play back to
 - `platforms` defaults to the campaign's platforms. The ids are `facebook`, `instagram`, `tiktok`, `youtube-shorts` and `linkedin`. Each preset in `reference/platforms/<id>.json` holds that platform's safe zones, length range, caption limits, hashtag range and tone notes.
 - `captions` holds one caption per platform. Render writes each to `caption-<id>.txt`. `caption` is the fallback, which keeps older specs working.
 - `preview` checks every storyboard frame against the **union** of the platforms' UI zones. It also checks the length against each platform's sweet spot and limit, and each caption's first line, total length and hashtag count. Fix every ⚠ before showing the user.
+
+## Subtitles, reveals and transitions
+- **`subtitles: true`** burns word-by-word subtitles from the `vo` lines.
+  - Defaults to brand.json `subtitles`.
+  - Each chunk holds up to `subtitleWords` words (default 3). A new chunk starts at punctuation or after 1.2 s.
+  - Each word pops in, and the active word takes the accent color.
+  - The subtitles sit just above the platforms' caption zone.
+  - In the player and storyboard, timing is estimated from the speech rate. `render` uses the real voiceover timings.
+  - Keep scene text clear of the subtitle band (about y 1250–1440).
+- **`reveal`** is set on a scene or for the whole spec. It changes how headlines (`.h1`, `.h2`) enter:
+  - `up` is the default slide-up.
+  - `words` and `chars` reveal one word or one letter at a time. The whole group finishes within about 0.8 s.
+  - `pop` pops each word in.
+  - `mask` makes the line rise out of a clipping edge.
+
+  Use one reveal style per video.
+- **`transition`** is how a scene enters. Set it on a scene or for the whole spec. The values are:
+  - `fade` (0.3 s, the default)
+  - `cut`
+  - `push` (0.45 s, the new scene pushes the old one up)
+  - `wipe` (0.5 s, left to right)
+  - `zoom` (0.5 s, zoom-through)
+  - `whip` (0.3 s, fast horizontal move with motion blur)
+
+  `{ "type": "push", "dur": 0.4 }` sets a custom duration. Keep to one transition family per video. Cuts and pushes suit fast videos; fades suit calm ones.
 
 ## Common scene fields
 | Field | Meaning |
@@ -58,6 +87,9 @@ Tone values for facts, rows and totals are `accent`, `alert` or `bad`, and `good
 | `cta` | `title`, `pill` (defaults to brand.url), `sub` | Call to action before the end card |
 | `end` | `line`, `tagline` | Logo, slogan and URL. Added automatically |
 | `phone` | `steps[]` (each `{caption, screen, dur, taps, style, pad}`) | Product walkthrough in a phone mockup |
+| `photos` | `photos[]` (each `"assets/x.jpg"` or `{src, caption, dur, zoom: in\|out, pan: left\|right\|none, pos}`), `each` (default 3 s per photo), `title`, `capTop` | Slideshow of full-frame photos with a slow Ken Burns move, cross-fading. Zoom and pan alternate when omitted. Use at least 2.5 s per photo |
+| `promo` | `kicker`, `title`, `was`, `now` (numbers), `prefix`, `suffix`, `decimals`, `badge`, `code`, `codeLabel`, `until`, `countdown` (seconds or `"HH:MM:SS"`) | Price reveal: the old price is struck through and the new price counts down to its value, then the badge, the promo code (typed) and an optional live countdown. Take the prices and deadline from `context.md`, and compute the discount; never type it by hand |
+| `testimonial` | `quote`, `author`, `role`, `source`, `stars` (real score, e.g. 4.5; omit when there is none), `avatar`, `reveal` (default `words`) | A real, confirmed public review. The quote reveals word by word, then the stars fill to the score, then the author |
 | `html` | `html` | Escape hatch: any markup using the animation attributes below |
 
 ## Phone screens
@@ -81,6 +113,9 @@ Set `data-a` to choose the animation:
 - `tap` shows a tap ripple
 - `grow` scales in horizontally
 - `kb` slowly zooms, Ken Burns style
+- `words`, `chars` and `mask` are the kinetic reveals described above
+- `ken` is the photo move, using `data-z` (`in` or `out`) and `data-p` (`left`, `right` or `none`)
+- `clock` counts down live from `data-from` seconds
 
 Timing attributes:
 - `data-t` is the start time within the scene
@@ -103,5 +138,8 @@ Fields:
   - `accent`, `accent2`, `success`, `onAccent`
   - `surface` and `ink`, used for phone screens
 - `numberGroup`, the thousands separator used by count-ups
+- `decimalSep`, the decimal separator used by prices
+- `voice`, the default macOS voice for voiceover; `null` means silent
+- `subtitles` and `subtitleWords`, the defaults for burned-in subtitles
 - `watermark`, false to hide it
 - `css`, extra global styles
