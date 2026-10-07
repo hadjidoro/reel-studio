@@ -145,6 +145,8 @@ Present the N concepts as a table with these columns:
 - **length**
 - **platform notes**
 
+Before writing concepts, read `reference/motion/hooks-and-retention.md`. It covers hook types, pacing, loops, CTAs, and how to design a series vs A/B variants.
+
 Follow these rules:
 - **Series**: mix the formats in `reference/craft.md`, use one angle per video, and skip topics in "Already published".
 - **Variants**: share one body, and change only the hook (and the CTA if useful). Make the hooks genuinely different, e.g. question vs number vs bold claim.
@@ -154,7 +156,10 @@ Follow these rules:
 
 ## 4. Specs and storyboards ✋
 
-Write one spec per approved concept in the campaign's `specs/NN-slug.json`. Read **`reference/spec-format.md`** before writing specs.
+Write one spec per approved concept in the campaign's `specs/NN-slug.json`. Before writing specs, read:
+- **`reference/spec-format.md`**: scene types, fields and markup.
+- `reference/motion/formats.md`: scene-by-scene recipes for promo, testimonial, demo, launch, slideshow and ad variants.
+- `reference/motion/typography-and-captions.md` and `reference/motion/motion-principles.md`: type sizes, reveals, subtitles, timing, transitions and a QC checklist.
 - Keep to the brand voice and to facts from `context.md`.
 - Mock UIs only: never real users' names, numbers or photos.
 - For **variants**, write each one as a full spec file, then note in `brief.md` which hook each file tests.
@@ -210,6 +215,8 @@ To deliver:
 
 ## Rules
 - Facts come from `context.md` only. If a video needs a fact you don't have, find a source or drop the claim.
+- Testimonials and reviews: show only real reviews recorded in `context.md` with their source, and only once the user confirms they may be shown publicly. Never invent a reviewer, a quote or a star rating. Without one, use another format.
+- Promotions: prices, discounts and deadlines must come from `context.md`. A countdown must count to the real deadline.
 - Don't use other companies' logos or imitate their branding. Naming them in text for comparison is fine unless a "Do not" rule says otherwise.
 - Keep workspace files in `.claude/reel-studio/`, and don't add files elsewhere in the project.
 - The engine lives in the skill (`engine/`, `bin/`). Improve it there when a scene type is missing, or use the `html` scene type for one-offs.
