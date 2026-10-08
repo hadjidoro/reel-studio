@@ -4,6 +4,16 @@
   const B = window.BRAND, S = window.SPEC;
   const RENDER = new URLSearchParams(location.search).has('render');
 
+  /* ---------- math & number helpers ---------- */
+  const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+  const eo = p => 1 - Math.pow(1 - p, 3);
+  const eb = p => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2); };
+  const group = (B.numberGroup ?? ' ');
+  const fmt = (n, dec = 0) => {
+    const [i, f] = Math.abs(n).toFixed(dec).split('.');
+    return (n < 0 ? '− ' : '') + i.replace(/\B(?=(\d{3})+(?!\d))/g, group) + (f ? (B.decimalSep ?? '.') + f : '');
+  };
+
   /* ---------- text helpers ---------- */
   // **x** accent · !!x!! alert/second accent · ++x++ success. Raw HTML is allowed too.
   const md = s => String(s ?? '')
@@ -146,6 +156,53 @@
     return html.replace(/data-(t|o)=(["'])([\d.]+)\2/g, (m, k, q, v) => `data-${k}=${q}${(+v + by).toFixed(2)}${q}`);
   }
 
+  // Photo slideshow: full-frame images with a slow Ken Burns move, cross-fading, each with an optional caption.
+  const photoList = sc => { let t = 0; return (sc.photos || []).map(ph => { const p = typeof ph === 'string' ? { src: ph } : { ...ph }; p.s = t; p.d = p.dur ?? sc.each ?? 3; t += p.d; return p; }); };
+  T.photos = sc => {
+    const ps = photoList(sc), x = .25;
+    return ps.map((p, i) => {
+      const last = i === ps.length - 1, end = p.s + p.d;
+      const zoom = p.zoom ?? (i % 2 ? 'out' : 'in'), pan = p.pan ?? ['left', 'right', 'none'][i % 3];
+      return `<div class="ph" data-t="${i ? p.s - x : 0}" data-a="${i ? 'fade' : 'none'}" data-d="${x * 2}" ${last ? '' : `data-o="${end + x}"`}>
+        <img src="${p.src}" style="object-position:${p.pos || 'center'}" data-a="ken" data-t="${Math.max(0, p.s - x)}" data-d="${p.d + x * 2}" data-z="${zoom}" data-p="${pan}"></div>`;
+    }).join('') + `<div class="pshade"></div>
+      ${sc.title ? `<div class="box" style="top:${sc.top ?? 300}px"><div class="h2" data-t=".1" data-a="up">${md(sc.title)}</div></div>` : ''}
+      ${ps.map((p, i) => p.caption ? `<div class="box" style="top:${sc.capTop ?? 1060}px"><div class="h2" data-t="${p.s + .25}" data-a="up" ${i === ps.length - 1 ? '' : `data-o="${p.s + p.d - .15}"`}>${md(p.caption)}</div></div>` : '').join('')}`;
+  };
+
+  // Price / promo reveal: old price struck through, new price counting down to it, badge, promo code, optional live countdown.
+  const secsOf = v => typeof v === 'number' ? v : String(v).split(':').reduce((a, x) => a * 60 + +x, 0);
+  T.promo = sc => {
+    const dec = sc.decimals ?? (String(sc.now ?? '').split('.')[1] || '').length;
+    const pre = sc.prefix ?? '', suf = sc.suffix ?? '', num = v => (pre + fmt(+v, dec) + suf);
+    const t1 = sc.was != null ? 1.5 : .4;   // the new price lands ~0.25 s after the strike-through finishes
+    return `${bgLayer(sc)}<div class="box center" style="top:${sc.top ?? (sc.code && sc.countdown != null ? 300 : 420)}px">
+      ${sc.kicker ? `<div class="kick" data-t="0" data-a="fade" data-d=".2">${md(sc.kicker)}</div>` : ''}
+      ${sc.title ? `<div class="h2" style="margin-top:40px" data-t=".1" data-a="up">${md(sc.title)}</div>` : ''}
+      ${sc.was != null ? `<div style="margin-top:56px" data-t=".45" data-a="up"><span class="was">${num(sc.was)}<i class="strike" data-t=".85" data-a="grow" data-d=".4"></i></span></div>` : ''}
+      <div style="margin-top:10px" data-t="${t1}" data-a="pop"><span class="now" ${sc.was != null ? `data-a="count" data-t="${t1}" data-d=".9" data-from="${sc.was}" data-to="${sc.now}" data-dec="${dec}" data-pre="${pre}" data-suf="${suf}"` : ''}>${num(sc.now)}</span></div>
+      ${sc.badge ? `<div style="margin-top:26px" data-t="${t1 + .8}" data-a="pop"><span class="badge">${md(sc.badge)}</span></div>` : ''}
+      ${sc.code ? `<div style="margin-top:60px" data-t="${t1 + 1.2}" data-a="up"><div class="small">${md(sc.codeLabel ?? 'Code')}</div><span class="code" data-a="type" data-t="${t1 + 1.4}" data-d=".5">${sc.code}</span></div>` : ''}
+      ${sc.countdown != null ? `<div style="margin-top:50px" data-t="${t1 + (sc.code ? 1.8 : 1.2)}" data-a="up">${sc.until ? `<div class="small">${md(sc.until)}</div>` : ''}<span class="clock" data-a="clock" data-from="${secsOf(sc.countdown)}"></span></div>`
+        : sc.until ? `<div class="p" style="margin-top:50px" data-t="${t1 + 1.2}" data-a="up">${md(sc.until)}</div>` : ''}
+    </div>`;
+  };
+
+  // Testimonial card: stars fill in, the quote reveals word by word, then the author.
+  T.testimonial = sc => {
+    const hasStars = sc.stars != null && sc.stars !== false, n = clamp(+sc.stars, 0, 5);
+    const words = String(sc.quote || '').split(/\s+/).length, tq = .3, ts = tq + Math.min(.8, words * .06) + .45;
+    const ta = ts + (hasStars ? .6 : 0);
+    const initials = String(sc.author || '?').split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
+    return `${bgLayer(sc)}<div class="box" style="top:${sc.top ?? 420}px"><div class="tcard" data-t="0" data-a="up">
+      <div class="quote" data-t="${tq}" data-a="${sc.reveal || 'words'}">${md('“' + String(sc.quote || '').replace(/(\*\*|!!|\+\+)?$/, '”$1'))}</div>
+      ${hasStars ? `<div class="stars">${[0, 1, 2, 3, 4].map(i => `<span class="star" style="--f:${clamp(n - i) * 100}%" data-t="${ts + i * .1}" data-a="pop" data-d=".4">★</span>`).join('')}</div>` : ''}
+      <div class="who" data-t="${ta}" data-a="up">
+        <div class="av">${sc.avatar ? `<img src="${sc.avatar}" alt="">` : initials}</div>
+        <div><b>${md(sc.author || '')}</b>${sc.role || sc.source ? `<small>${md([sc.role, sc.source].filter(Boolean).join(' · '))}</small>` : ''}</div>
+      </div></div></div>`;
+  };
+
   T.html = sc => sc.html || '';
   const voText = vo => !vo ? '' : typeof vo === 'string' ? vo : vo.map(v => v.text).join(' / ');
 
@@ -165,9 +222,15 @@
       case 'cta': return 2.8;
       case 'end': return 2.5;
       case 'phone': return (sc.steps || []).reduce((a, st) => a + (st.dur ?? 2.8), 0) + .6;
+      case 'photos': return photoList(sc).reduce((a, p) => a + p.d, 0) + .2;
+      case 'promo': return (sc.was != null ? 3.8 : 2.8) + (sc.code ? 1.6 : 0) + (sc.countdown != null || sc.until ? .9 : 0);
+      case 'testimonial': { const w = String(sc.quote || '').split(/\s+/).length; return +(.3 + Math.min(.8, w * .06) + 1.4 + Math.max(3, w * .28)).toFixed(2); }
       default: return 4;
     }
   };
+
+  // Scene transitions (into a scene) and their default durations in seconds.
+  const TRANS = { fade: .3, cut: 0, push: .45, wipe: .5, zoom: .5, whip: .3 };
 
   /* ---------- timeline ---------- */
   const scenes = (S.scenes || []).map(x => ({ ...x }));
@@ -178,6 +241,7 @@
   // keys: scene-local times worth a storyboard frame (one per phone step, else the settled end of the scene)
   const keysOf = sc => sc.type === 'phone'
     ? (() => { let t = 0; return (sc.steps || []).map(st => { t += st.dur ?? 2.8; return +(t - .3).toFixed(2); }); })()
+    : sc.type === 'photos' ? photoList(sc).map(p => +(p.s + p.d - .3).toFixed(2))
     : [+Math.max(.2, Math.min(sc.dur - .35, sc.dur * .85)).toFixed(2)];
   window.SCENES = scenes.map(sc => ({ s: sc.s, e: sc.e, type: sc.type, dur: sc.dur, vo: sc.vo, keys: keysOf(sc) }));
 
@@ -185,31 +249,86 @@
   stage.className = 'stage'; stage.id = 'stage';
   stage.innerHTML = scenes.map((sc, i) => {
     if (!T[sc.type]) throw new Error(`Unknown scene type "${sc.type}" (scene ${i + 1})`);
-    return `<div class="scene" data-s="${sc.s}" data-e="${sc.e}">${T[sc.type](sc)}</div>`;
+    const tr = i === 0 ? 'cut' : (sc.transition ?? S.transition ?? 'fade');
+    const type = typeof tr === 'string' ? tr : tr.type, td = (typeof tr === 'object' && tr.dur) || TRANS[type];
+    if (TRANS[type] === undefined) throw new Error(`Unknown transition "${type}" (scene ${i + 1}). Use: ${Object.keys(TRANS).join(', ')}`);
+    return `<div class="scene" data-s="${sc.s}" data-e="${sc.e}" data-tr="${type}" data-td="${td}">${T[sc.type](sc)}</div>`;
   }).join('') + (B.watermark === false || S.watermark === false ? '' : `<div class="wm">${B.logoSmall ? `<img src="${B.logoSmall}" style="height:48px">` : wordmark()}</div>`);
 
-  /* ---------- animation ---------- */
-  const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
-  const eo = p => 1 - Math.pow(1 - p, 3);
-  const eb = p => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2); };
-  const group = (B.numberGroup ?? ' ');
-  const fmt = n => (n < 0 ? '− ' : '') + Math.abs(Math.round(n)).toString().replace(/\B(?=(\d{3})+(?!\d))/g, group);
+  // Kinetic headlines: scene "reveal" (or spec-wide) turns the headline slide-up into words / chars / pop / mask reveals.
+  stage.querySelectorAll(':scope > .scene').forEach((el, i) => {
+    const r = scenes[i]?.reveal ?? S.reveal;
+    if (r && r !== 'up') el.querySelectorAll('.h1[data-a="up"], .h2[data-a="up"]').forEach(h => { h.dataset.a = r; });
+  });
 
+  /* ---------- animation ---------- */
+
+  // Stagger (s) and per-unit animation for kinetic reveals.
+  // Group reveals are capped at ~0.8 s so long lines don't drag (reference/motion/typography-and-captions.md).
+  const KINETIC = { words: [.06, 'rise'], chars: [.03, 'rise'], pop: [.07, 'pop'] };
+  function split(el) {
+    const [base, anim] = KINETIC[el.dataset.a], t0 = +(el.dataset.t || 0), d = el.dataset.d || .45;
+    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = [];
+    for (let n; (n = walk.nextNode());) nodes.push(n);
+    const units = nodes.reduce((a, n) => a + (el.dataset.a === 'chars' ? n.textContent.replace(/\s/g, '').length : n.textContent.trim().split(/\s+/).filter(Boolean).length), 0);
+    const step = Math.min(base, .8 / Math.max(1, units - 1));
+    let k = 0;
+    for (const n of nodes) {
+      const parts = n.textContent.split(el.dataset.a === 'chars' ? /(\s+|)/ : /(\s+)/).filter(x => x !== '' && x !== undefined);
+      const frag = document.createDocumentFragment();
+      for (const part of parts) {
+        if (/^\s+$/.test(part)) { frag.append(part); continue; }
+        const w = document.createElement('span');
+        w.className = 'w'; w.textContent = part;
+        Object.assign(w.dataset, { a: anim, t: (t0 + k++ * step).toFixed(3), d });
+        frag.append(w);
+      }
+      n.replaceWith(frag);
+    }
+    el.dataset.a = 'none';
+  }
   function prepare() {
     stage.querySelectorAll('[data-a="type"]').forEach(el => { el.dataset.text = el.dataset.text ?? el.textContent; el.textContent = ''; });
+    stage.querySelectorAll('[data-a="words"],[data-a="chars"],[data-a="pop"].h1,[data-a="pop"].h2,[data-a="pop"].quote').forEach(el => {
+      if (el.dataset.a === 'pop' && !el.matches('.h1,.h2,.quote')) return;
+      if (KINETIC[el.dataset.a]) split(el);
+    });
   }
 
   window.render = function (t) {
     const total = window.DURATION;
     stage.querySelectorAll('.scene').forEach((sc, idx, all) => {
-      const s = +sc.dataset.s, e = +sc.dataset.e, f = .3;
-      const isFirst = idx === 0, isLast = idx === all.length - 1;
-      let o = 1;
-      if (t < s || t > e + (isLast ? 1 : 0)) o = 0;
+      const s = +sc.dataset.s, e = +sc.dataset.e, isLast = idx === all.length - 1;
+      // A scene's transition plays over the first `td` seconds of that scene; the outgoing scene stays visible
+      // underneath (or moves away) during it, except for fade, which dips through the background.
+      const tin = sc.dataset.tr, din = +sc.dataset.td, nx = all[idx + 1];
+      const tout = nx ? nx.dataset.tr : 'cut', dout = nx ? +nx.dataset.td : 0;
+      const tail = isLast ? 1 : ['fade', 'cut'].includes(tout) ? 0 : dout;
+      let o = 1, clip = '';
+      const tf = [], fl = [];
+      if (t < s || t > e + tail) o = 0;
       else {
-        if (!isFirst) o = Math.min(o, clamp((t - s) / f));
-        if (!isLast) o = Math.min(o, clamp((e - t) / f));
+        if (t < s + din) {
+          const q = clamp((t - s) / din), k = eo(q);
+          switch (tin) {
+            case 'fade': o = Math.min(o, q); break;
+            case 'push': tf.push(`translateY(${(1 - k) * 1920}px)`); break;
+            case 'wipe': clip = `inset(0 ${(1 - k) * 100}% 0 0)`; break;
+            case 'zoom': o = Math.min(o, q); tf.push(`scale(${1.08 - .08 * k})`); break;
+            case 'whip': tf.push(`translateX(${(1 - k) * 1080}px)`); fl.push(`blur(${(Math.sin(Math.PI * q) * 28).toFixed(1)}px)`); break;
+          }
+        }
+        if (!isLast && tout === 'fade') o = Math.min(o, clamp((e - t) / dout));
+        else if (!isLast && t > e) {
+          const q = clamp((t - e) / dout), k = eo(q);
+          switch (tout) {
+            case 'push': tf.push(`translateY(${-k * 1920}px)`); break;
+            case 'zoom': o = Math.min(o, 1 - q); tf.push(`scale(${1 + .15 * k})`); break;
+            case 'whip': tf.push(`translateX(${-k * 1080}px)`); fl.push(`blur(${(Math.sin(Math.PI * q) * 28).toFixed(1)}px)`); break;
+          }
+        }
       }
+      sc.style.transform = tf.join(' '); sc.style.filter = fl.join(' '); sc.style.clipPath = clip;
       sc.style.opacity = o;
       sc.style.display = o <= 0 ? 'none' : 'block';
       if (o <= 0) return;
@@ -235,16 +354,78 @@
           }
           case 'count': {
             const from = +el.dataset.from, to = +el.dataset.to;
-            el.textContent = (el.dataset.pre || '') + fmt(from + (to - from) * eo(p)) + (el.dataset.suf || '');
+            el.textContent = (el.dataset.pre || '') + fmt(from + (to - from) * eo(p), +(el.dataset.dec || 0)) + (el.dataset.suf || '');
+            break;
+          }
+          case 'rise': { const k = 1 - Math.pow(2, -10 * p); op = clamp(p * 2.5); tr = `translateY(${(1 - k) * 0.45}em)`; break; }
+          case 'mask': op = p > 0 ? 1 : 0; el.style.clipPath = `inset(0 0 ${(1 - eo(p)) * 100}% 0)`; tr = `translateY(${(1 - eo(p)) * 40}px)`; break;
+          case 'ken': {
+            // Slow zoom in or out with a gentle pan; the scale never drops below 1.06 so the pan never shows an edge.
+            const k = .5 - .5 * Math.cos(Math.PI * p), z = el.dataset.z === 'out' ? 1.16 - .10 * k : 1.06 + .10 * k;
+            const dir = { left: -1, right: 1 }[el.dataset.p] || 0;
+            tr = `translateX(${dir * (k - .5) * 60}px) scale(${z})`;
+            break;
+          }
+          case 'clock': {
+            const v = Math.max(0, +el.dataset.from - Math.max(0, lt - t0)), h = Math.floor(v / 3600), m = Math.floor(v % 3600 / 60), x = Math.floor(v % 60);
+            el.textContent = (h ? [h, m, x] : [m, x]).map(n => String(n).padStart(2, '0')).join(':');
             break;
           }
         }
         if (el.dataset.o !== undefined) op *= 1 - clamp((lt - +el.dataset.o) / .3);
-        if (!['on', 'type', 'count'].includes(a)) { el.style.opacity = op; el.style.transform = tr; }
+        if (!['on', 'type', 'count', 'clock'].includes(a)) { el.style.opacity = op; el.style.transform = tr; }
       });
     });
+    renderSubs(t);
     window.__T = t;
   };
+
+  /* ---------- subtitles: word-by-word captions from the voiceover lines ---------- */
+  // Timing is estimated from the speech rate in the player; render injects the real clip timings via setVoTiming.
+  const SUBS_ON = S.subtitles ?? B.subtitles ?? false;
+  const subs = document.createElement('div'); subs.className = 'subs';
+  const plain = x => String(x).replace(/\*\*|!!|\+\+|<[^>]+>/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  function chunkLines(lines) {
+    const per = S.subtitleWords ?? B.subtitleWords ?? 3, out = [];
+    for (const l of lines) {
+      const words = plain(l.text).split(/\s+/).filter(Boolean);
+      if (!words.length) continue;
+      const wt = words.map(w => w.length + 2), tot = wt.reduce((a, b) => a + b, 0);
+      let at = l.start, cur = [];
+      const timed = words.map((w, i) => { const x = { w, s: at }; at += (l.end - l.start) * wt[i] / tot; return x; });
+      timed.forEach((x, i) => {
+        cur.push(x);
+        const last = i === timed.length - 1;
+        const long = !last && timed[i + 1].s - cur[0].s > 1.2;
+        if (cur.length >= per || long || /[.,!?;:…]$/.test(x.w) || last) { out.push({ s: cur[0].s, e: last ? l.end : timed[i + 1].s, words: cur }); cur = []; }
+      });
+    }
+    return out;
+  }
+  function estimateLines() {
+    const rate = S.voiceRate ?? 185, items = [];
+    scenes.forEach(sc => {
+      if (!sc.vo) return;
+      (typeof sc.vo === 'string' ? [{ at: .15, text: sc.vo }] : sc.vo).forEach(v => items.push({ start: sc.s + (v.at ?? .15), text: v.text, rate: v.rate || rate }));
+    });
+    items.sort((a, b) => a.start - b.start);
+    return items.map((l, i) => ({ ...l, end: Math.min(l.start + plain(l.text).split(/\s+/).length * 60 / l.rate + .2, (items[i + 1]?.start ?? window.DURATION + 1.5) - .12) }));
+  }
+  let CHUNKS = SUBS_ON ? chunkLines(estimateLines()) : [], lastChunk = null;
+  window.setVoTiming = lines => { CHUNKS = SUBS_ON ? chunkLines(lines) : []; lastChunk = undefined; };
+  function renderSubs(t) {
+    const c = CHUNKS.find(x => t >= x.s && t < x.e) || null;
+    if (c !== lastChunk) { subs.innerHTML = c ? `<span class="chunk">${c.words.map(w => `<span>${w.w}</span>`).join(' ')}</span>` : ''; lastChunk = c; }
+    if (!c) return;
+    // Each word pops in at its own start (0.6 → 1 over 0.26 s with overshoot); only the active word takes the accent.
+    const active = c.words.reduce((k, w, i) => t >= w.s ? i : k, 0);
+    subs.querySelectorAll('.chunk > span').forEach((el, i) => {
+      const p = clamp((t - c.words[i].s) / .26);
+      el.classList.toggle('on', i === active);
+      el.style.opacity = t < c.words[i].s ? 0 : 1;
+      el.style.transform = `scale(${.6 + .4 * eb(p)})`;
+    });
+  }
 
   /* ---------- safe zones: union of the target platforms' UI overlays (window.ZONES from the CLI) ---------- */
   const ZONES = window.ZONES || [
@@ -282,6 +463,10 @@
 
   /* ---------- mount ---------- */
   function mount() {
+    // Subtitles sit just above the caption/CTA zone of the target platforms.
+    const capZone = ZONES.find(z => z.name === 'Caption / CTA');
+    subs.style.bottom = (capZone ? 1920 - capZone.y + 40 : 520) + 'px';
+    stage.insertBefore(subs, stage.querySelector('.wm'));
     if (RENDER) {
       document.body.className = 'render';
       document.body.appendChild(stage);

@@ -511,6 +511,10 @@ async function render() {
       const f = queue.shift();
       const { id, spec, player, outDir, plats } = build(f);
       const { page, meta } = await openPage(br, player);
+      // Voiceover is synthesised first so the subtitles follow the real clip timings.
+      const voice = spec.voice === false ? null : flags.voice || spec.voice || brand().voice;
+      const clips = voice && meta.scenes.some(s => s.vo) ? synthVo({ spec, meta, voice, outDir }) : [];
+      if (clips.length) await page.evaluate(l => window.setVoTiming(l), clips.map(c => ({ start: c.start, end: c.end, text: c.text })));
       const silent = path.join(outDir, `${id}.silent.mp4`);
       const ff = spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(fps), '-i', '-',
         '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo', '-shortest', '-c:v', 'libx264', '-preset', 'medium', '-crf', '18',
@@ -524,8 +528,7 @@ async function render() {
       ff.stdin.end(); await new Promise(r => ff.on('close', r));
       await page.close();
       const final = path.join(outDir, `${id}.mp4`);
-      const voice = spec.voice === false ? null : flags.voice || spec.voice || brand().voice;
-      if ((voice && meta.scenes.some(s => s.vo)) || spec.audio) await mixAudio({ spec, meta, silent, final, voice, outDir });
+      if (clips.length || spec.audio) mixAudio({ spec, meta, silent, final, clips });
       else fs.renameSync(silent, final);
       fs.rmSync(silent, { force: true });
       spawnSync('ffmpeg', ['-y', '-loglevel', 'error', '-ss', String(Math.min(2.2, meta.dur / 2)), '-i', final, '-frames:v', '1', '-q:v', '3', path.join(outDir, 'cover.jpg')]);
@@ -541,29 +544,31 @@ async function render() {
   gallery();
 }
 
-/** Voiceover via macOS `say` (one clip per scene `vo`, or `vo: [{at, text}]`), plus optional music bed `spec.audio`. */
-async function mixAudio({ spec, meta, silent, final, voice, outDir }) {
+/** Voiceover via macOS `say`: one clip per scene `vo`, or `vo: [{at, text}]`. Returns the clips with their timings. */
+function synthVo({ spec, meta, voice, outDir }) {
   const rate = +(flags.rate || spec.voiceRate || 185);
   const clips = [];
-  if (voice) {
-    if (!has('say')) die('Voiceover needs macOS `say`. Record your own track and set spec.audio instead.');
-    const lines = [];
-    meta.scenes.forEach(sc => {
-      if (!sc.vo) return;
-      const items = typeof sc.vo === 'string' ? [{ at: .15, text: sc.vo }] : sc.vo;
-      items.forEach(it => lines.push({ start: sc.s + (it.at ?? .15), text: it.text, rate: it.rate || rate }));
-    });
-    lines.sort((a, b) => a.start - b.start);
-    fs.mkdirSync(path.join(outDir, 'vo'), { recursive: true });
-    lines.forEach((l, i) => {
-      const f = path.join(outDir, 'vo', `${i}.aiff`);
-      execFileSync('say', ['-v', voice, '-r', String(l.rate), '-o', f, l.text]);
-      const d = probe(f), room = (lines[i + 1]?.start ?? meta.dur + 1.5) - l.start - .12;
-      const tempo = d > room ? d / room : 1;
-      if (tempo > 1.18) log(`  ⚠ line ${i + 1} too long (${d.toFixed(2)}s for ${room.toFixed(2)}s): "${l.text}" — shorten it or lengthen the scene`);
-      clips.push({ f, start: l.start, tempo: Math.min(tempo, 1.35), end: l.start + d / Math.min(tempo, 1.35) });
-    });
-  }
+  if (!has('say')) die('Voiceover needs macOS `say`. Record your own track and set spec.audio instead.');
+  const lines = [];
+  meta.scenes.forEach(sc => {
+    if (!sc.vo) return;
+    const items = typeof sc.vo === 'string' ? [{ at: .15, text: sc.vo }] : sc.vo;
+    items.forEach(it => lines.push({ start: sc.s + (it.at ?? .15), text: it.text, rate: it.rate || rate }));
+  });
+  lines.sort((a, b) => a.start - b.start);
+  fs.mkdirSync(path.join(outDir, 'vo'), { recursive: true });
+  lines.forEach((l, i) => {
+    const f = path.join(outDir, 'vo', `${i}.aiff`);
+    execFileSync('say', ['-v', voice, '-r', String(l.rate), '-o', f, l.text]);
+    const d = probe(f), room = (lines[i + 1]?.start ?? meta.dur + 1.5) - l.start - .12;
+    const tempo = d > room ? d / room : 1;
+    if (tempo > 1.18) log(`  ⚠ line ${i + 1} too long (${d.toFixed(2)}s for ${room.toFixed(2)}s): "${l.text}" — shorten it or lengthen the scene`);
+    clips.push({ f, start: l.start, text: l.text, tempo: Math.min(tempo, 1.35), end: l.start + d / Math.min(tempo, 1.35) });
+  });
+  return clips;
+}
+/** Mix the voiceover clips and the optional music bed `spec.audio` onto the silent render. */
+function mixAudio({ spec, meta, silent, final, clips }) {
   const lastEnd = Math.max(meta.dur, ...clips.map(c => c.end + .4));
   const total = +lastEnd.toFixed(2), pad = +(total - meta.dur).toFixed(2);
   const inputs = ['-i', silent], filt = [], mixes = [];
