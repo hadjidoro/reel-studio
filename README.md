@@ -94,7 +94,7 @@ brand.json  context.md  sources.json  assets/  sources/      the profile, reused
 campaigns/<date>-<theme>/campaign.json  brief.md  specs/  out/   one folder per run
 ```
 
-Workspaces from v1 are converted automatically. Their links become the new link list, and existing specs move into an `earlier-reels` campaign.
+Workspaces from 1.0 are converted automatically. Their links become the new link list, and existing specs move into an `earlier-reels` campaign.
 
 ## Docs
 
