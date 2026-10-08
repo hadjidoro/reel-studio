@@ -3,16 +3,22 @@
  * Reel Studio CLI — turns JSON reel specs into a scrubbable HTML player, a storyboard image and 1080×1920 MP4s.
  *
  *   reel doctor                          check node / ffmpeg / chrome / puppeteer-core
- *   reel init [--facebook URL] [--website URL] [--code .|PATH|GITHUB_URL|none] [--ref BRANCH]
- *                                        create/update the workspace and record where context comes from
- *   reel sources [sync]                  show context sources; sync clones/pulls a GitHub repo
- *   reel list                            list specs with scene count and duration
+ *   reel init [--link URL|PATH]… [--unlink URL|PATH]… [--note TEXT]… [--ref BRANCH]
+ *                                        create/update the workspace profile and its context links
+ *                                        (prefix a link with competitor= or inspiration= to tag it;
+ *                                        --facebook/--website/--code still work as aliases)
+ *   reel profile                         one-screen summary of the saved profile (start of every run)
+ *   reel sources [sync|fetched]          list links; sync clones/pulls GitHub repos; fetched stamps the fetch date
+ *   reel campaign new <theme> [--platforms facebook,tiktok] [--mode series|variants] [--count 3]
+ *   reel campaign [list]                 list campaigns (newest last)
+ *   reel list                            list the campaign's specs with scene count and duration
  *   reel preview <spec…|--all> [--open]  build player.html + storyboard.jpg per spec
  *   reel frames <spec> --times 1,2.5     save individual stills
  *   reel render <spec…|--all> [--voice NAME] [--rate 185] [--fps 30] [--jobs 3]
  *   reel gallery                         rebuild out/index.html (all players, storyboards, videos, captions)
  *
  * Workspace resolution: --ws, $REEL_WS, nearest ancestor containing .claude/reel-studio, else ./.claude/reel-studio.
+ * Campaign resolution (list/preview/frames/render/gallery): --campaign NAME|PART, else the newest campaign.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -27,7 +33,11 @@ const cmd = argv[0];
 const flags = {}; const pos = [];
 for (let i = 1; i < argv.length; i++) {
   const a = argv[i];
-  if (a.startsWith('--')) { const k = a.slice(2); const nx = argv[i + 1]; if (nx === undefined || nx.startsWith('--')) flags[k] = true; else { flags[k] = nx; i++; } }
+  if (a.startsWith('--')) {
+    const k = a.slice(2), nx = argv[i + 1];
+    let v = true; if (nx !== undefined && !nx.startsWith('--')) { v = nx; i++; }
+    flags[k] = k in flags ? [].concat(flags[k], v) : v;   // repeated flags (--link a --link b) collect into an array
+  }
   else pos.push(a);
 }
 const die = m => { console.error('✖ ' + m); process.exit(1); };
@@ -78,8 +88,35 @@ function brand() {
   if (!fs.existsSync(f)) die(`No brand.json in ${WS}. Run: reel init`);
   return readJSON(f);
 }
+
+/* ---------- campaigns: one folder per run (campaigns/<date>-<theme>/ with campaign.json, brief.md, specs/, out/) ---------- */
+const CAMPS = () => path.join(WS, 'campaigns');
+function campaignList() {
+  if (!fs.existsSync(CAMPS())) return [];
+  return fs.readdirSync(CAMPS())
+    .filter(n => fs.existsSync(path.join(CAMPS(), n, 'campaign.json')))
+    .map(n => ({ name: n, dir: path.join(CAMPS(), n), ...readJSON(path.join(CAMPS(), n, 'campaign.json')) }))
+    .sort((a, b) => String(a.created).localeCompare(String(b.created)) || a.name.localeCompare(b.name));
+}
+let campCache;
+/** The campaign this command works on: --campaign NAME (or part of it), else the newest. A pre-campaign workspace uses its root. */
+function campaign() {
+  if (campCache) return campCache;
+  const all = campaignList(), want = flags.campaign;
+  if (want && want !== true) {
+    const hit = all.find(c => c.name === want) || all.filter(c => c.name.includes(want)).pop();
+    if (!hit) die(`Campaign not found: ${want}. Known: ${all.map(c => c.name).join(', ') || 'none'}`);
+    return (campCache = hit);
+  }
+  if (all.length) return (campCache = all[all.length - 1]);
+  return (campCache = { name: null, dir: WS, platforms: [] });
+}
+const SPECS = () => path.join(campaign().dir, 'specs');
+const OUT = () => path.join(campaign().dir, 'out');
+
 function specFiles(list) {
-  const dir = path.join(WS, 'specs');
+  const dir = SPECS();
+  if (!fs.existsSync(dir)) die(`No specs folder in ${campaign().dir}. Create a campaign first: reel campaign new <theme>`);
   if (flags.all || !list.length) return fs.readdirSync(dir).filter(f => f.endsWith('.json')).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).map(f => path.join(dir, f));
   return list.map(s => {
     for (const c of [s, path.join(dir, s), path.join(dir, s + '.json')]) if (fs.existsSync(c) && fs.statSync(c).isFile()) return path.resolve(c);
@@ -109,7 +146,7 @@ function fontTags(b) {
 }
 function build(file) {
   const spec = readJSON(file), b = brand(), id = specId(file, spec);
-  const outDir = path.join(WS, 'out', id); fs.mkdirSync(outDir, { recursive: true });
+  const outDir = path.join(OUT(), id); fs.mkdirSync(outDir, { recursive: true });
   const css = fs.readFileSync(path.join(SKILL, 'engine', 'engine.css'), 'utf8');
   const js = fs.readFileSync(path.join(SKILL, 'engine', 'engine.js'), 'utf8');
   const safe = o => JSON.stringify(o).replace(/</g, '\\u003c');
@@ -152,28 +189,56 @@ async function doctor() {
   log(`\nWorkspace: ${WS} ${fs.existsSync(path.join(WS, 'brand.json')) ? '(ready)' : '(not initialised — run reel init)'}`);
   if (fs.existsSync(SRC())) printSources();
 }
-/* ---------- sources: facebook page, website, source code ---------- */
+/* ---------- sources: a typed list of links (website, social pages, code, docs, competitors…) ---------- */
 const SRC = () => path.join(WS, 'sources.json');
-function loadSources() { return fs.existsSync(SRC()) ? readJSON(SRC()) : {}; }
-const normUrl = u => !u || u === true || u === 'none' ? null : (/^https?:\/\//.test(u) ? u : 'https://' + u.replace(/^\/+/, ''));
+const ROLES = ['own', 'competitor', 'inspiration'];
+/** v1 kept three fixed slots (facebook, website, code); v2 is { version: 2, links: [], notes: [] }. */
+function migrateSources(src) {
+  if (src.version >= 2) return src;
+  const links = [];
+  if (src.website) links.push({ type: 'website', url: src.website, role: 'own' });
+  if (src.facebook) links.push({ type: 'facebook', url: src.facebook, role: 'own' });
+  if (src.code?.type === 'github') links.push({ type: 'github', url: src.code.url, ref: src.code.ref, path: src.code.path, role: 'own' });
+  if (src.code?.type === 'local') links.push({ type: 'local', path: src.code.path, role: 'own' });
+  return { version: 2, links, notes: [], updated: src.updated, synced: src.synced };
+}
+function loadSources() {
+  if (!fs.existsSync(SRC())) return { version: 2, links: [], notes: [] };
+  const raw = readJSON(SRC()), src = migrateSources(raw);
+  if (src !== raw) { fs.writeFileSync(SRC(), JSON.stringify(src, null, 2) + '\n'); log('• Converted sources.json to the link list format'); }
+  return src;
+}
+const saveSources = src => fs.writeFileSync(SRC(), JSON.stringify(src, null, 2) + '\n');
+const normUrl = u => /^https?:\/\//.test(u) ? u : 'https://' + u.replace(/^\/+/, '');
 function parseGithub(v) {
   const m = String(v).match(/^(?:github:|https?:\/\/(?:www\.)?github\.com\/|git@github\.com:)([\w.-]+)\/([\w.-]+?)(?:\.git)?(?:\/tree\/([^/]+))?\/?$/);
   return m ? { owner: m[1], repo: m[2], ref: m[3] } : null;
 }
-function codeFrom(v, ref) {
-  if (v === undefined) return undefined;
-  if (v === true || v === 'none' || v === '') return { type: 'none' };
+const HOSTS = [
+  [/(^|\.)(facebook\.com|fb\.com|fb\.me|fb\.watch)$/, 'facebook'], [/(^|\.)instagram\.com$/, 'instagram'],
+  [/(^|\.)tiktok\.com$/, 'tiktok'], [/(^|\.)linkedin\.com$/, 'linkedin'], [/(^|\.)(youtube\.com|youtu\.be)$/, 'youtube'],
+  [/(^|\.)(x\.com|twitter\.com)$/, 'x'], [/(^|\.)(drive\.google\.com|docs\.google\.com|dropbox\.com|notion\.so|notion\.site)$/, 'docs'],
+];
+/** "competitor=https://…" → { type, url|path, role }. Types: website, facebook, instagram, tiktok, linkedin, youtube, x, docs, github, local. */
+function classify(raw) {
+  let v = String(raw).trim(), role = 'own';
+  const tag = v.match(/^(\w+)=(.+)$/);
+  if (tag && ROLES.includes(tag[1].toLowerCase())) { role = tag[1].toLowerCase(); v = tag[2]; }
   const gh = parseGithub(v);
-  if (gh) return { type: 'github', url: `https://github.com/${gh.owner}/${gh.repo}`, ref: ref || gh.ref || null, path: `sources/${gh.repo}` };
-  const abs = path.resolve(process.cwd(), v);
-  if (!fs.existsSync(abs)) die('Source folder not found: ' + abs);
-  return { type: 'local', path: abs };
+  if (gh) return { type: 'github', url: `https://github.com/${gh.owner}/${gh.repo}`, ref: (typeof flags.ref === 'string' && flags.ref) || gh.ref || null, path: `sources/${gh.repo}`, role };
+  if (!/^https?:\/\//.test(v)) {
+    const abs = path.resolve(process.cwd(), v.replace(/^~(?=\/|$)/, os.homedir()));
+    if (fs.existsSync(abs)) return { type: 'local', path: abs, role };
+    if (/^[.~/]/.test(v)) die('Folder not found: ' + abs);
+  }
+  const url = normUrl(v);
+  let host; try { host = new URL(url).hostname.replace(/^(www|m|web|mobile)\./, ''); } catch { die('Not a URL or folder: ' + v); }
+  return { type: (HOSTS.find(([re]) => re.test(host)) || [, 'website'])[1], url, role };
 }
-/** Absolute folder Claude should read for code context (null when there is none). */
-function codeDir(src = loadSources()) {
-  const c = src.code; if (!c || c.type === 'none') return null;
-  return c.type === 'github' ? path.join(WS, c.path) : c.path;
-}
+const linkKey = l => l.url || l.path;
+const isCode = l => l.type === 'github' || l.type === 'local';
+/** Absolute folders Claude should read for code context. */
+const codeDirs = (src = loadSources()) => src.links.filter(isCode).map(l => l.type === 'github' ? path.join(WS, l.path) : l.path);
 function syncGithub(c) {
   const dest = path.join(WS, c.path);
   if (fs.existsSync(path.join(dest, '.git'))) {
@@ -194,48 +259,126 @@ function syncGithub(c) {
   if (r.status !== 0) die(`Could not clone ${c.url}. For a private repo run \`gh auth login\` (or set up SSH), then: reel sources sync`);
   return dest;
 }
+const day = iso => iso ? String(iso).slice(0, 10) : '—';
 function printSources(src = loadSources()) {
-  const c = src.code;
-  log(`Facebook page: ${src.facebook || '— (not set)'}`);
-  log(`Website:       ${src.website || '— (not set)'}`);
-  log(`Source code:   ${!c ? '— (not set)' : c.type === 'none' ? 'none (website only)' : c.type === 'github' ? `${c.url}${c.ref ? ' @ ' + c.ref : ''} → ${codeDir(src)}` : c.path}`);
+  if (!src.links.length) log('Links: none yet — reel init --link URL');
+  for (const l of src.links) {
+    const where = l.type === 'github' ? `${l.url}${l.ref ? ' @ ' + l.ref : ''} → ${path.join(WS, l.path)}` : linkKey(l);
+    log(`  ${l.type.padEnd(10)} ${l.role === 'own' ? '' : `[${l.role}] `}${where}`);
+  }
+  for (const n of src.notes || []) log(`  note       ${n}`);
+  log(`Last fetched: ${day(src.fetched)}`);
 }
 function sources() {
-  const sub = pos[0];
-  const src = loadSources();
+  const sub = pos[0], src = loadSources();
   if (sub === 'sync') {
-    if (src.code?.type === 'github') syncGithub(src.code);
-    else if (src.code?.type === 'local' && !fs.existsSync(src.code.path)) die('Local source folder is gone: ' + src.code.path);
-    src.synced = new Date().toISOString(); fs.writeFileSync(SRC(), JSON.stringify(src, null, 2) + '\n');
+    for (const l of src.links) {
+      if (l.type === 'github') syncGithub(l);
+      else if (l.type === 'local' && !fs.existsSync(l.path)) log('  ⚠ local folder is gone: ' + l.path);
+    }
+    src.synced = new Date().toISOString(); saveSources(src);
   }
+  if (sub === 'fetched') { src.fetched = new Date().toISOString(); saveSources(src); }
   printSources(src);
 }
 
 function init() {
-  fs.mkdirSync(path.join(WS, 'specs'), { recursive: true });
   fs.mkdirSync(path.join(WS, 'assets'), { recursive: true });
   const bf = path.join(WS, 'brand.json');
   if (!fs.existsSync(bf)) fs.copyFileSync(path.join(SKILL, 'templates', 'brand.json'), bf);
   const cf = path.join(WS, 'context.md');
   if (!fs.existsSync(cf)) fs.copyFileSync(path.join(SKILL, 'templates', 'context.md'), cf);
-  const ex = path.join(WS, 'specs', '01-example.json');
-  if (!fs.readdirSync(path.join(WS, 'specs')).length && !flags['no-example']) fs.copyFileSync(path.join(SKILL, 'templates', 'example-spec.json'), ex);
-  fs.writeFileSync(path.join(WS, '.gitignore'), 'out/\nsources/\n');
-  // Onboarding answers — re-run init with any flag to change one; others are kept.
+  // Nothing the skill writes is versioned: profile, links, specs, renders all stay out of git.
+  fs.writeFileSync(path.join(WS, '.gitignore'), '*\n');
   const src = loadSources();
-  if (flags.facebook !== undefined) src.facebook = normUrl(flags.facebook);
-  if (flags.website !== undefined) src.website = normUrl(flags.website);
-  const code = codeFrom(flags.code, flags.ref);
-  if (code) src.code = code;
-  if (code?.type === 'github') { syncGithub(code); src.synced = new Date().toISOString(); }
+  const arr = k => flags[k] === undefined ? [] : [].concat(flags[k]).filter(x => x !== true);
+  // Legacy aliases from the three-slot onboarding.
+  const adds = [...arr('link'), ...arr('website'), ...arr('facebook'), ...arr('code')].filter(v => v !== 'none' && v !== '');
+  for (const raw of adds) {
+    const l = classify(raw);
+    src.links = src.links.filter(x => linkKey(x) !== linkKey(l)).concat(l);
+    if (l.type === 'github') { syncGithub(l); src.synced = new Date().toISOString(); }
+  }
+  for (const raw of arr('unlink')) {
+    const before = src.links.length, k = raw.replace(/\/+$/, '');
+    src.links = src.links.filter(x => ![linkKey(x), linkKey(x).replace(/\/+$/, '')].some(y => y === k || y === normUrl(k)));
+    if (src.links.length === before) log('  ⚠ no link matched ' + raw);
+  }
+  src.notes = [...(src.notes || []), ...arr('note')];
   src.updated = new Date().toISOString();
-  fs.writeFileSync(SRC(), JSON.stringify(src, null, 2) + '\n');
+  saveSources(src);
   log(`✓ Workspace ready: ${WS}`);
   printSources(src);
-  const missing = ['facebook', 'website', 'code'].filter(k => src[k] === undefined);
-  if (missing.length) log(`\n  Not answered yet: ${missing.join(', ')} — re-run: reel init ${missing.map(k => `--${k} …`).join(' ')}`);
-  log('  Next: gather context into context.md and brand.json, then write specs/*.json');
+  log('  Next: gather context from the links into context.md and brand.json, then: reel campaign new <theme>');
 }
+
+function profile() {
+  if (!fs.existsSync(path.join(WS, 'brand.json'))) { log(`No profile yet in ${WS} — start onboarding.`); process.exitCode = 2; return; }
+  const b = brand(), src = loadSources(), cf = path.join(WS, 'context.md');
+  const ctx = fs.existsSync(cf) ? fs.readFileSync(cf, 'utf8') : '';
+  const section = h => (ctx.split(/^## /m).find(s => s.startsWith(h)) || '');
+  const rows = h => section(h).split('\n').filter(l => /^\|/.test(l) && !/^\|\s*-/.test(l)).slice(1).filter(l => l.replace(/[|\s]/g, ''));
+  const camps = campaignList();
+  log(`Brand:      ${b.name}${b.url ? ' · ' + b.url : ''}`);
+  log(`Language:   ${b.lang || 'en'}`);
+  log(`Voiceover:  ${b.voice ? 'on (' + b.voice + ')' : 'off'}`);
+  log(`Context:    context.md, ${rows('Facts').length} sourced facts, updated ${fs.existsSync(cf) ? day(fs.statSync(cf).mtime.toISOString()) : '—'}`);
+  log(`Published:  ${rows('Already published').length} videos`);
+  log(`Campaigns:  ${camps.length}${camps.length ? ` (latest: ${camps[camps.length - 1].name})` : ''}`);
+  log('Links:');
+  printSources(src);
+}
+
+const slugify = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+function campaignCmd() {
+  const sub = pos[0] || 'list';
+  if (sub === 'list') {
+    const all = campaignList();
+    if (!all.length) log('No campaigns yet — reel campaign new <theme>');
+    for (const c of all) {
+      const n = fs.existsSync(path.join(c.dir, 'specs')) ? fs.readdirSync(path.join(c.dir, 'specs')).filter(f => f.endsWith('.json')).length : 0;
+      log(`${c.name.padEnd(44)} ${c.mode.padEnd(9)} ${String(n).padStart(2)}/${c.count} specs  ${c.platforms.join(',')}`);
+    }
+    return;
+  }
+  if (sub !== 'new') die('Usage: reel campaign new <theme> | reel campaign list');
+  const theme = pos.slice(1).join(' ') || (typeof flags.theme === 'string' && flags.theme);
+  if (!theme) die('Give the campaign a theme: reel campaign new "back to school promo"');
+  const mode = typeof flags.mode === 'string' ? flags.mode : 'series';
+  if (!['series', 'variants'].includes(mode)) die('--mode must be series or variants');
+  const count = flags.count === undefined ? 3 : +flags.count;
+  if (!Number.isInteger(count) || count < 1 || count > 10) die('--count must be 1–10');
+  const platforms = String(typeof flags.platforms === 'string' ? flags.platforms : 'facebook').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+  if (!fs.existsSync(path.join(WS, 'brand.json'))) die(`No profile in ${WS}. Run: reel init`);
+  adoptLegacySpecs();
+  const created = new Date().toISOString();
+  const name = `${created.slice(0, 10)}-${slugify(theme) || 'campaign'}`;
+  const dir = path.join(CAMPS(), name);
+  if (fs.existsSync(dir)) die('Campaign already exists: ' + name);
+  fs.mkdirSync(path.join(dir, 'specs'), { recursive: true });
+  const meta = { theme, platforms, mode, count, created };
+  fs.writeFileSync(path.join(dir, 'campaign.json'), JSON.stringify(meta, null, 2) + '\n');
+  const brief = fs.readFileSync(path.join(SKILL, 'templates', 'brief.md'), 'utf8')
+    .replace(/\{\{(\w+)\}\}/g, (m, k) => ({ name, theme, platforms: platforms.join(', '), mode, count, date: created.slice(0, 10) }[k] ?? m));
+  fs.writeFileSync(path.join(dir, 'brief.md'), brief);
+  log(`✓ Campaign ${name}\n  ${mode}, ${count} video${count > 1 ? 's' : ''}, ${platforms.join(', ')}\n  ${dir}`);
+}
+/** A workspace from before campaigns kept specs/ and out/ at its root: move them into a campaign so they stay reachable. */
+function adoptLegacySpecs() {
+  const specs = path.join(WS, 'specs');
+  if (!fs.existsSync(specs) || !fs.readdirSync(specs).some(f => f.endsWith('.json'))) return;
+  const first = Math.min(...fs.readdirSync(specs).map(f => fs.statSync(path.join(specs, f)).mtimeMs));
+  const created = new Date(first).toISOString(), name = `${created.slice(0, 10)}-earlier-reels`;
+  const dir = path.join(CAMPS(), name);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.renameSync(specs, path.join(dir, 'specs'));
+  if (fs.existsSync(path.join(WS, 'out'))) fs.renameSync(path.join(WS, 'out'), path.join(dir, 'out'));
+  const n = fs.readdirSync(path.join(dir, 'specs')).filter(f => f.endsWith('.json')).length;
+  fs.writeFileSync(path.join(dir, 'campaign.json'), JSON.stringify({ theme: 'Reels made before campaigns', platforms: ['facebook'], mode: 'series', count: n, created }, null, 2) + '\n');
+  log(`• Moved ${n} earlier specs into campaigns/${name}`);
+  campCache = undefined;
+}
+
 function list() {
   const b = brand();
   for (const f of specFiles([])) {
@@ -280,7 +423,7 @@ async function preview() {
 }
 /** out/index.html — every spec's storyboard, player and video in one page. */
 function gallery() {
-  const out = path.join(WS, 'out'); if (!fs.existsSync(out)) return;
+  const out = OUT(); if (!fs.existsSync(out)) return;
   const items = fs.readdirSync(out).filter(d => fs.existsSync(path.join(out, d, 'player.html'))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   const esc = x => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const rows = items.map(id => {
@@ -293,7 +436,7 @@ function gallery() {
   }).join('');
   fs.writeFileSync(path.join(out, 'index.html'), `<!doctype html><meta charset="utf-8"><title>Reel Studio</title>
 <style>body{background:#161312;color:#ddd;font:14px system-ui;margin:24px}a{color:#e8a13c}section{margin-bottom:36px}img{max-width:100%;border-radius:10px}pre{white-space:pre-wrap;background:#221d1a;padding:10px;border-radius:8px}h2{margin:0 0 4px}</style>
-<h1>Reel Studio · ${items.length} reels</h1>${rows}`);
+<h1>${esc(campaign().theme || 'Reel Studio')} · ${items.length} reels</h1>${campaign().name ? `<p>${esc(campaign().name)} · ${esc(campaign().mode)} · ${esc((campaign().platforms || []).join(', '))}</p>` : ''}${rows}`);
 }
 async function frames() {
   const [f] = specFiles(pos.slice(0, 1));
@@ -331,7 +474,7 @@ async function render() {
       ff.stdin.end(); await new Promise(r => ff.on('close', r));
       await page.close();
       const final = path.join(outDir, `${id}.mp4`);
-      const voice = flags.voice || spec.voice;
+      const voice = spec.voice === false ? null : flags.voice || spec.voice || brand().voice;
       if ((voice && meta.scenes.some(s => s.vo)) || spec.audio) await mixAudio({ spec, meta, silent, final, voice, outDir });
       else fs.renameSync(silent, final);
       fs.rmSync(silent, { force: true });
@@ -384,6 +527,6 @@ async function mixAudio({ spec, meta, silent, final, voice, outDir }) {
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', ...inputs, '-filter_complex', filt.join(';'), '-map', '0:v', '-map', out, ...vArgs, '-c:a', 'aac', '-b:a', '160k', '-t', String(total), '-movflags', '+faststart', final], { stdio: 'inherit' });
 }
 
-const CMDS = { doctor, init, sources, list, preview, frames, render, gallery: async () => { gallery(); log(path.join(WS, 'out', 'index.html')); } };
+const CMDS = { doctor, init, sources, list, preview, frames, render, profile, campaign: campaignCmd, gallery: async () => { gallery(); log(path.join(OUT(), 'index.html')); } };
 if (!CMDS[cmd]) { log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('*/')[0].replace(/^#!.*\n\/\*\*?/, '').replace(/^ \* ?/gm, '')); process.exit(cmd ? 1 : 0); }
 await CMDS[cmd]();
