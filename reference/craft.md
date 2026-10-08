@@ -1,5 +1,13 @@
 # Writing reels that perform
 
+For more depth, see `reference/motion/`:
+- `hooks-and-retention.md`: hooks, pacing, loops, CTAs, series vs variants
+- `typography-and-captions.md`: type sizes, kinetic reveals, burned-in subtitles
+- `formats.md`: scene-by-scene recipes
+- `motion-principles.md`: easing, timing, transitions, QC
+
+These are adapted from iart-ai's MIT-licensed motion skills; see `reference/motion/ATTRIBUTION.md`.
+
 ## Shape
 - **15–25 s**, 4–6 scenes. Viewers decide in about 1.5 s whether to keep watching, so frame 0 must already show the hook.
 - The **hook** is a question or tension the viewer recognises: "Your car sits in the garage?" or "300 000 F a month? Here's the real math."
