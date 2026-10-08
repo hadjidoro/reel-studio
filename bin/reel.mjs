@@ -63,6 +63,76 @@ function ensurePuppeteer() {
     return req.resolve('puppeteer-core');
   }
 }
+/* ---------- HyperFrames (default renderer) ---------- */
+const HF_VERSION = '0.8.142';
+const HF_ENV = { ...process.env, HYPERFRAMES_NO_TELEMETRY: '1', DO_NOT_TRACK: '1' };
+function hyperframesBin() {
+  const bin = path.join(SKILL, 'node_modules', '.bin', process.platform === 'win32' ? 'hyperframes.cmd' : 'hyperframes');
+  const installed = () => { try { return JSON.parse(fs.readFileSync(path.join(SKILL, 'node_modules', 'hyperframes', 'package.json'), 'utf8')).version === HF_VERSION; } catch { return false; } };
+  if (!installed()) {
+    log(`• Installing HyperFrames ${HF_VERSION} into the skill folder (one time)…`);
+    const r = spawnSync('npm', ['install', '--no-audit', '--no-fund', '--silent'], { cwd: SKILL, stdio: 'inherit' });
+    if (r.status !== 0 || !installed()) die('npm install failed in ' + SKILL);
+  }
+  return bin;
+}
+const engineName = () => {
+  const e = typeof flags.engine === 'string' ? flags.engine : 'hyperframes';
+  if (!['hyperframes', 'classic'].includes(e)) die('--engine must be hyperframes or classic');
+  return e;
+};
+/** @font-face rules with paths relative to the workspace. Google fonts are downloaded once into assets/fonts/google/. */
+async function localFontCss(b) {
+  const f = b.font || {};
+  let css = [].concat(f.files || []).map(src => `@font-face{font-family:'${f.family}';src:url('${src.file || src}');font-weight:${src.weight || '100 900'};font-style:normal}`).join('\n');
+  if (f.google) {
+    const dir = path.join(WS, 'assets', 'fonts', 'google', slugify(f.google));
+    const cached = path.join(dir, 'font.css');
+    if (!fs.existsSync(cached)) {
+      log(`• Downloading font ${f.family} for offline rendering (one time)…`);
+      const url = `https://fonts.googleapis.com/css2?family=${f.google.replace(/ /g, '+')}&display=block`;
+      const ua = { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36' };
+      let text = await (await fetch(url, { headers: ua })).text();
+      fs.mkdirSync(dir, { recursive: true });
+      const urls = [...new Set(text.match(/https:\/\/fonts\.gstatic\.com\/[^)'"]+/g) || [])];
+      if (!urls.length) die('Could not download the Google font ' + f.google + '. Put the font files in assets/ and list them in brand.json font.files.');
+      for (const [i, u] of urls.entries()) {
+        const name = `${i}${path.extname(new URL(u).pathname) || '.woff2'}`;
+        fs.writeFileSync(path.join(dir, name), Buffer.from(await (await fetch(u)).arrayBuffer()));
+        text = text.split(u).join(path.relative(WS, path.join(dir, name)).split(path.sep).join('/'));
+      }
+      fs.writeFileSync(cached, text);
+    }
+    css += '\n' + fs.readFileSync(cached, 'utf8');
+  }
+  return css;
+}
+/** Writes out/<id>/hf/: a HyperFrames project whose only runtime is our engine, seeked by HyperFrames' clock. */
+async function buildHf({ id, spec, outDir, plats, meta, clips, fps }) {
+  const b = brand(), dir = path.join(outDir, 'hf');
+  const fontCss = await localFontCss(b);
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  if (fs.existsSync(path.join(WS, 'assets'))) fs.cpSync(path.join(WS, 'assets'), path.join(dir, 'assets'), { recursive: true });
+  const css = fs.readFileSync(path.join(SKILL, 'engine', 'engine.css'), 'utf8');
+  const js = fs.readFileSync(path.join(SKILL, 'engine', 'engine.js'), 'utf8');
+  const safe = o => JSON.stringify(o).replace(/</g, '\\u003c');
+  const timing = clips.map(c => ({ start: c.start, end: c.end, text: c.text }));
+  fs.writeFileSync(path.join(dir, 'index.html'), `<!doctype html><html lang="${b.lang || 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=1080, height=1920">
+<title>${id}</title><style>${fontCss}\n${cssVars(b)}\n${css}\n${b.css || ''}\n${spec.css || ''}
+html,body{margin:0;width:1080px;height:1920px;overflow:hidden;background:var(--bg)}#root{position:relative;width:100%;height:100%;overflow:hidden}</style></head>
+<body><div id="root" data-composition-id="main" data-start="0" data-duration="${meta.dur}" data-width="1080" data-height="1920" data-fps="${fps}" data-no-timeline></div>
+<script>window.HYPERFRAMES=true;window.BRAND=${safe(b)};window.SPEC=${safe({ ...spec, id })};window.ZONES=${safe(safeZones(plats))};window.VO_TIMING=${clips.length ? safe(timing) : 'null'};</script>
+<script>${js}</script></body></html>`);
+  return dir;
+}
+function renderHf(dir, silent, fps) {
+  const quality = typeof flags.quality === 'string' ? flags.quality : 'looks';
+  const r = spawnSync(hyperframesBin(), ['render', '--workers', String(flags.workers || 'auto'), '--quality', quality, '--fps', String(fps), '--output', silent],
+    { cwd: dir, stdio: flags.verbose ? 'inherit' : ['ignore', 'ignore', 'inherit'], env: HF_ENV });
+  if (r.status !== 0 || !fs.existsSync(silent)) die(`HyperFrames render failed in ${dir}. Re-run with --verbose, or use --engine classic.`);
+}
+
 async function browser() {
   const exe = chromePath(); if (!exe) die('Chrome/Chromium not found. Set CHROME_PATH.');
   const pp = (await import(pathToFileURL(ensurePuppeteer()).href)).default;
@@ -187,7 +257,7 @@ function build(file) {
   const spec = readJSON(file), b = brand(), id = specId(file, spec);
   const outDir = path.join(OUT(), id); fs.mkdirSync(outDir, { recursive: true });
   const css = fs.readFileSync(path.join(SKILL, 'engine', 'engine.css'), 'utf8');
-  const js = fs.readFileSync(path.join(SKILL, 'engine', 'engine.js'), 'utf8');
+  const js = fs.readFileSync(path.join(SKILL, 'engine', 'engine.js'), 'utf8') + '\n' + fs.readFileSync(path.join(SKILL, 'engine', 'player.js'), 'utf8');
   const safe = o => JSON.stringify(o).replace(/</g, '\\u003c');
   const plats = specPlatforms(spec), zones = safeZones(plats);
   const html = `<!doctype html><html lang="${b.lang || 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -225,6 +295,8 @@ async function doctor() {
   ];
   let pup = true; try { ensurePuppeteer(); } catch { pup = false; }
   rows.push(['puppeteer-core', pup, SKILL]);
+  let hf = ''; try { hf = execFileSync(hyperframesBin(), ['--version'], { env: HF_ENV }).toString().trim(); } catch {}
+  rows.push([`hyperframes ${HF_VERSION}`, !!hf, hf ? 'default renderer (--engine classic for the old one)' : 'npm install failed']);
   for (const [n, ok, info] of rows) log(`${ok ? '✓' : '✖'} ${n.padEnd(28)} ${info}`);
   log(`\nWorkspace: ${WS} ${fs.existsSync(path.join(WS, 'brand.json')) ? '(ready)' : '(not initialised — run reel init)'}`);
   if (fs.existsSync(SRC())) printSources();
@@ -504,7 +576,7 @@ async function render() {
   if (!has('ffmpeg')) die('ffmpeg not found');
   const files = specFiles(pos), fps = +(flags.fps || 30);
   const br = await browser();
-  const jobs = +(flags.jobs || 3);
+  const jobs = +(flags.jobs || (engineName() === 'hyperframes' ? 1 : 3));   // HyperFrames already renders each video on parallel workers
   const queue = [...files]; const done = [];
   async function worker() {
     while (queue.length) {
@@ -516,6 +588,10 @@ async function render() {
       const clips = voice && meta.scenes.some(s => s.vo) ? synthVo({ spec, meta, voice, outDir }) : [];
       if (clips.length) await page.evaluate(l => window.setVoTiming(l), clips.map(c => ({ start: c.start, end: c.end, text: c.text })));
       const silent = path.join(outDir, `${id}.silent.mp4`);
+      if (engineName() === 'hyperframes') {
+        await page.close();
+        renderHf(await buildHf({ id, spec, outDir, plats, meta, clips, fps }), silent, fps);
+      } else {
       const ff = spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(fps), '-i', '-',
         '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo', '-shortest', '-c:v', 'libx264', '-preset', 'medium', '-crf', '18',
         '-pix_fmt', 'yuv420p', '-r', String(fps), '-c:a', 'aac', '-movflags', '+faststart', silent], { stdio: ['pipe', 'inherit', 'inherit'] });
@@ -527,9 +603,11 @@ async function render() {
       }
       ff.stdin.end(); await new Promise(r => ff.on('close', r));
       await page.close();
+      }
       const final = path.join(outDir, `${id}.mp4`);
       if (clips.length || spec.audio) mixAudio({ spec, meta, silent, final, clips });
-      else fs.renameSync(silent, final);
+      else execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', silent, '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo', '-map', '0:v', '-map', '1:a',
+        '-shortest', '-c:v', 'copy', '-c:a', 'aac', '-movflags', '+faststart', final]);   // platforms expect an audio track
       fs.rmSync(silent, { force: true });
       spawnSync('ffmpeg', ['-y', '-loglevel', 'error', '-ss', String(Math.min(2.2, meta.dur / 2)), '-i', final, '-frames:v', '1', '-q:v', '3', path.join(outDir, 'cover.jpg')]);
       for (const p of plats) {

@@ -8,6 +8,7 @@
     "reel": "bin/reel.mjs"
   },
   "dependencies": {
+    "hyperframes": "0.8.142",
     "puppeteer-core": "^24.0.0"
   },
   "license": "MIT",
