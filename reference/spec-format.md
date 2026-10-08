@@ -7,7 +7,9 @@ A spec is a JSON file in `specs/`. The canvas is 1080×1920. Scenes play back to
   "id": "optional, defaults to the file name",
   "title": "Internal title shown in the gallery",
   "audience": "who it targets",
-  "caption": "Post caption + hashtags (written to caption.txt)",
+  "platforms": ["facebook", "tiktok"],
+  "captions": { "facebook": "Caption + hashtags", "tiktok": "…" },
+  "caption": "fallback caption for any platform missing from captions",
   "voice": "optional default TTS voice, e.g. Thomas",
   "voiceRate": 185,
   "audio": "assets/music.mp3 | { \"file\": \"…\", \"volume\": 0.2 }",
@@ -17,6 +19,11 @@ A spec is a JSON file in `specs/`. The canvas is 1080×1920. Scenes play back to
   "scenes": [ { "type": "hook", "…": "…" } ]
 }
 ```
+
+## Platforms and captions
+- `platforms` defaults to the campaign's platforms. The ids are `facebook`, `instagram`, `tiktok`, `youtube-shorts` and `linkedin`. Each preset in `reference/platforms/<id>.json` holds that platform's safe zones, length range, caption limits, hashtag range and tone notes.
+- `captions` holds one caption per platform. Render writes each to `caption-<id>.txt`. `caption` is the fallback, which keeps older specs working.
+- `preview` checks every storyboard frame against the **union** of the platforms' UI zones. It also checks the length against each platform's sweet spot and limit, and each caption's first line, total length and hashtag count. Fix every ⚠ before showing the user.
 
 ## Common scene fields
 | Field | Meaning |

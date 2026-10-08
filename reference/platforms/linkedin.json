@@ -1,0 +1,12 @@
+{
+  "id": "linkedin",
+  "name": "LinkedIn",
+  "aliases": ["li"],
+  "canvas": [1080, 1920],
+  "duration": { "ideal": [30, 90], "max": 600 },
+  "safe": { "top": 120, "bottom": 300, "right": { "width": 120, "from": 1000, "to": 1500 } },
+  "caption": { "visible": 140, "max": 3000, "hashtags": [0, 3] },
+  "tone": "Professional and useful: lead with an insight or result, not a sales pitch. About 85% watch muted, so burn in the key text. 1–3 hashtags at most.",
+  "checked": "2026-10",
+  "sources": ["https://ligosocial.com/blog/linkedin-video-post-best-practices", "https://quso.ai/blog/linkedin-video-specs", "https://postplanify.com/blog/social-media-safe-zones-2026-complete-guide"]
+}

@@ -127,6 +127,45 @@ function specFiles(list) {
 }
 const specId = (file, spec) => spec.id || path.basename(file, '.json');
 
+/* ---------- platforms: presets in reference/platforms/<id>.json ---------- */
+let presetCache;
+function presets() {
+  if (presetCache) return presetCache;
+  const dir = path.join(SKILL, 'reference', 'platforms');
+  return (presetCache = fs.readdirSync(dir).filter(f => f.endsWith('.json')).map(f => readJSON(path.join(dir, f))));
+}
+function preset(name) {
+  const k = String(name).trim().toLowerCase();
+  const p = presets().find(x => x.id === k || (x.aliases || []).includes(k));
+  if (!p) die(`Unknown platform "${name}". Known: ${presets().map(x => x.id).join(', ')}`);
+  return p;
+}
+/** A spec targets its own "platforms", else its campaign's, else Facebook. */
+const specPlatforms = spec => [...new Set([].concat(spec.platforms?.length ? spec.platforms : campaign().platforms?.length ? campaign().platforms : ['facebook']).map(n => preset(n).id))].map(preset);
+/** Union of the chosen platforms' UI zones, as rectangles in canvas px. */
+function safeZones(list) {
+  const [W, H] = list[0].canvas, max = k => Math.max(...list.map(p => p.safe[k] || 0));
+  const right = list.map(p => p.safe.right).filter(Boolean);
+  const z = [
+    { name: 'Top UI', x: 0, y: 0, w: W, h: max('top') },
+    { name: 'Caption / CTA', x: 0, y: H - max('bottom'), w: W, h: max('bottom') },
+  ];
+  if (right.length) {
+    const w = Math.max(...right.map(r => r.width)), from = Math.min(...right.map(r => r.from)), to = Math.max(...right.map(r => r.to));
+    z.push({ name: 'Buttons', x: W - w, y: from, w, h: to - from });
+  }
+  return z;
+}
+/** Hashtags and visible-length checks for one platform caption. */
+function captionIssues(text, p) {
+  const out = [], tags = (text.match(/(^|\s)#[\p{L}\p{N}_]+/gu) || []).length, first = text.split('\n')[0];
+  if (text.length > p.caption.max) out.push(`${text.length} chars, ${p.name} allows ${p.caption.max}`);
+  if (first.length > p.caption.visible) out.push(`first line is ${first.length} chars; ${p.name} shows about ${p.caption.visible} before "more"`);
+  if (tags > p.caption.hashtags[1]) out.push(`${tags} hashtags, ${p.name} max ${p.caption.hashtags[1]}`);
+  return out;
+}
+const captionFor = (spec, p) => spec.captions?.[p.id] ?? spec.caption ?? '';
+
 /* ---------- build ---------- */
 function cssVars(b) {
   const c = b.colors || {};
@@ -150,13 +189,14 @@ function build(file) {
   const css = fs.readFileSync(path.join(SKILL, 'engine', 'engine.css'), 'utf8');
   const js = fs.readFileSync(path.join(SKILL, 'engine', 'engine.js'), 'utf8');
   const safe = o => JSON.stringify(o).replace(/</g, '\\u003c');
+  const plats = specPlatforms(spec), zones = safeZones(plats);
   const html = `<!doctype html><html lang="${b.lang || 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <base href="${pathToFileURL(WS).href}/">
 <title>${id}</title>${fontTags(b)}<style>${cssVars(b)}\n${css}\n${b.css || ''}\n${spec.css || ''}</style></head>
-<body><script>window.BRAND=${safe(b)};window.SPEC=${safe({ ...spec, id })};</script><script>${js}</script></body></html>`;
+<body><script>window.BRAND=${safe(b)};window.SPEC=${safe({ ...spec, id })};window.ZONES=${safe(zones)};window.PLATFORMS=${safe(plats.map(p => p.name))};</script><script>${js}</script></body></html>`;
   const player = path.join(outDir, 'player.html');
   fs.writeFileSync(player, html);
-  return { id, spec, player, outDir };
+  return { id, spec, player, outDir, plats };
 }
 async function openPage(br, player) {
   const page = await br.newPage();
@@ -348,7 +388,7 @@ function campaignCmd() {
   if (!['series', 'variants'].includes(mode)) die('--mode must be series or variants');
   const count = flags.count === undefined ? 3 : +flags.count;
   if (!Number.isInteger(count) || count < 1 || count > 10) die('--count must be 1–10');
-  const platforms = String(typeof flags.platforms === 'string' ? flags.platforms : 'facebook').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+  const platforms = [...new Set(String(typeof flags.platforms === 'string' ? flags.platforms : 'facebook').split(',').filter(x => x.trim()).map(n => preset(n).id))];
   if (!fs.existsSync(path.join(WS, 'brand.json'))) die(`No profile in ${WS}. Run: reel init`);
   adoptLegacySpecs();
   const created = new Date().toISOString();
@@ -391,17 +431,19 @@ async function preview() {
   const br = await browser();
   try {
     for (const f of files) {
-      const { id, player, outDir } = build(f);
+      const { id, spec, player, outDir, plats } = build(f);
       const { page, meta, errors } = await openPage(br, player);
-      // one settled frame per scene
-      const shots = [];
+      // one settled frame per scene, checked against the platforms' UI zones
+      const shots = [], warn = [];
       for (const [i, sc] of meta.scenes.entries()) {
         const vo = !sc.vo ? '' : typeof sc.vo === 'string' ? sc.vo : sc.vo.map(v => v.text).join(' / ');
         for (const [k, key] of sc.keys.entries()) {
           await page.evaluate(t => render(t), sc.s + key);
           const b64 = await page.screenshot({ type: 'jpeg', quality: 70, encoding: 'base64' });
           const part = sc.keys.length > 1 ? ` (${k + 1}/${sc.keys.length})` : '';
-          shots.push({ b64, label: `${i + 1}${part} · ${sc.type} · ${sc.s.toFixed(1)}–${sc.e.toFixed(1)}s`, vo: k === 0 ? vo : '' });
+          const hits = await page.evaluate(() => window.safeCheck());
+          for (const h of hits) warn.push(`scene ${i + 1}${part} (${sc.type}): "${h.text}" under ${h.zone}`);
+          shots.push({ b64, label: `${hits.length ? '⚠ ' : ''}${i + 1}${part} · ${sc.type} · ${sc.s.toFixed(1)}–${sc.e.toFixed(1)}s`, vo: k === 0 ? vo : '' });
         }
       }
       await page.close();
@@ -414,7 +456,15 @@ async function preview() {
       const sb = path.join(outDir, 'storyboard.jpg');
       await sheet.screenshot({ path: sb, type: 'jpeg', quality: 82, fullPage: true });
       await sheet.close();
-      log(`✓ ${id}  ${meta.dur.toFixed(1)}s\n  player:     ${player}\n  storyboard: ${sb}`);
+      for (const p of plats) {
+        if (meta.dur > p.duration.max) warn.push(`${meta.dur.toFixed(1)}s is over ${p.name}'s ${p.duration.max}s limit`);
+        else if (meta.dur < p.duration.ideal[0] || meta.dur > p.duration.ideal[1]) warn.push(`${meta.dur.toFixed(1)}s is outside ${p.name}'s sweet spot (${p.duration.ideal.join('–')}s)`);
+        const cap = captionFor(spec, p);
+        if (!cap) warn.push(`no caption for ${p.name}`);
+        else for (const x of captionIssues(cap, p)) warn.push(`caption: ${x}`);
+      }
+      log(`✓ ${id}  ${meta.dur.toFixed(1)}s  ${plats.map(p => p.id).join(', ')}\n  player:     ${player}\n  storyboard: ${sb}`);
+      for (const w of warn) log('  ⚠ ' + w);
       if (errors.length) log('  ⚠ page errors: ' + errors.join(' | '));
       if (flags.open) spawn(process.platform === 'darwin' ? 'open' : 'xdg-open', [player], { detached: true, stdio: 'ignore' }).unref();
     }
@@ -432,7 +482,7 @@ function gallery() {
     return `<section><h2>${esc(id)}</h2><p>${esc(spec.title || '')}${spec.audience ? ` · <i>${esc(spec.audience)}</i>` : ''}</p>
       <p><a href="${id}/player.html">▶ Player</a>${f(id + '.mp4') ? ` · <a href="${id}/${id}.mp4">MP4</a>` : ' · <span style="opacity:.6">not rendered</span>'}</p>
       ${f('storyboard.jpg') ? `<a href="${id}/player.html"><img src="${id}/storyboard.jpg"></a>` : ''}
-      ${spec.caption ? `<pre>${esc(spec.caption)}</pre>` : ''}</section>`;
+      ${(() => { try { return specPlatforms(spec).map(p => captionFor(spec, p) ? `<h4>${esc(p.name)}</h4><pre>${esc(captionFor(spec, p))}</pre>` : '').join(''); } catch { return ''; } })()}</section>`;
   }).join('');
   fs.writeFileSync(path.join(out, 'index.html'), `<!doctype html><meta charset="utf-8"><title>Reel Studio</title>
 <style>body{background:#161312;color:#ddd;font:14px system-ui;margin:24px}a{color:#e8a13c}section{margin-bottom:36px}img{max-width:100%;border-radius:10px}pre{white-space:pre-wrap;background:#221d1a;padding:10px;border-radius:8px}h2{margin:0 0 4px}</style>
@@ -459,7 +509,7 @@ async function render() {
   async function worker() {
     while (queue.length) {
       const f = queue.shift();
-      const { id, spec, player, outDir } = build(f);
+      const { id, spec, player, outDir, plats } = build(f);
       const { page, meta } = await openPage(br, player);
       const silent = path.join(outDir, `${id}.silent.mp4`);
       const ff = spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(fps), '-i', '-',
@@ -479,7 +529,10 @@ async function render() {
       else fs.renameSync(silent, final);
       fs.rmSync(silent, { force: true });
       spawnSync('ffmpeg', ['-y', '-loglevel', 'error', '-ss', String(Math.min(2.2, meta.dur / 2)), '-i', final, '-frames:v', '1', '-q:v', '3', path.join(outDir, 'cover.jpg')]);
-      if (spec.caption) fs.writeFileSync(path.join(outDir, 'caption.txt'), spec.caption + '\n');
+      for (const p of plats) {
+        const cap = captionFor(spec, p);
+        if (cap) fs.writeFileSync(path.join(outDir, `caption-${p.id}.txt`), cap + '\n');
+      }
       log(`✓ ${id}  ${probe(final).toFixed(1)}s  ${final}`);
       done.push(final);
     }

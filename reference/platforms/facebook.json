@@ -1,0 +1,12 @@
+{
+  "id": "facebook",
+  "name": "Facebook Reels",
+  "aliases": ["fb", "facebook-reels"],
+  "canvas": [1080, 1920],
+  "duration": { "ideal": [15, 30], "max": 90 },
+  "safe": { "top": 160, "bottom": 420, "right": { "width": 130, "from": 880, "to": 1500 } },
+  "caption": { "visible": 125, "max": 2200, "hashtags": [3, 5] },
+  "tone": "Conversational and local; questions in the caption drive comments. Many viewers watch muted, so on-screen text must carry the story.",
+  "checked": "2026-10",
+  "sources": ["https://postplanify.com/blog/social-media-safe-zones-2026-complete-guide", "iart-ai/freelance-motion-skills video-delivery-specs"]
+}

@@ -1,0 +1,12 @@
+{
+  "id": "tiktok",
+  "name": "TikTok",
+  "aliases": ["tt"],
+  "canvas": [1080, 1920],
+  "duration": { "ideal": [15, 45], "max": 600 },
+  "safe": { "top": 160, "bottom": 420, "right": { "width": 150, "from": 860, "to": 1560 } },
+  "caption": { "visible": 100, "max": 4000, "hashtags": [3, 5] },
+  "tone": "Native and fast: hook in the first second, plain talk, no ad polish. Loops well when the last frame leads back into the first.",
+  "checked": "2026-10",
+  "sources": ["https://postplanify.com/blog/social-media-safe-zones-2026-complete-guide", "iart-ai/tiktok-video-skills short-form-video"]
+}

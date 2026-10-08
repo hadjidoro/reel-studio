@@ -1,0 +1,12 @@
+{
+  "id": "instagram",
+  "name": "Instagram Reels",
+  "aliases": ["ig", "instagram-reels", "reels"],
+  "canvas": [1080, 1920],
+  "duration": { "ideal": [15, 30], "max": 180 },
+  "safe": { "top": 220, "bottom": 480, "right": { "width": 120, "from": 900, "to": 1500 } },
+  "caption": { "visible": 125, "max": 2200, "hashtags": [3, 5] },
+  "tone": "Visual and aspirational; put the hook in the first caption line. Hashtags go in the caption, never on screen. The bottom UI grew in late 2025: keep text 480 px above the bottom edge.",
+  "checked": "2026-10",
+  "sources": ["https://www.clipspeed.ai/blog/instagram-reels-captions.html", "https://postplanify.com/blog/social-media-safe-zones-2026-complete-guide"]
+}

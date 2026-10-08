@@ -246,6 +246,40 @@
     window.__T = t;
   };
 
+  /* ---------- safe zones: union of the target platforms' UI overlays (window.ZONES from the CLI) ---------- */
+  const ZONES = window.ZONES || [
+    { name: 'Top UI', x: 0, y: 0, w: 1080, h: 220 }, { name: 'Caption / CTA', x: 0, y: 1500, w: 1080, h: 420 },
+    { name: 'Buttons', x: 930, y: 900, w: 150, h: 600 }];
+  const seen = el => {
+    for (let e = el; e && e !== stage; e = e.parentElement) {
+      const cs = getComputedStyle(e);
+      if (cs.display === 'none' || cs.visibility === 'hidden' || +cs.opacity < .5) return false;
+    }
+    return true;
+  };
+  // Visible text at the current time whose glyphs overlap a zone. The watermark and safe overlay are exempt.
+  window.safeCheck = function () {
+    const out = [], base = stage.getBoundingClientRect(), k = base.width / 1080, range = document.createRange();
+    const hit = (r, label) => {
+      const b = { x: (r.left - base.left) / k, y: (r.top - base.top) / k, w: r.width / k, h: r.height / k };
+      if (b.w < 2 || b.h < 2) return;
+      for (const z of ZONES) {
+        const ix = Math.min(b.x + b.w, z.x + z.w) - Math.max(b.x, z.x), iy = Math.min(b.y + b.h, z.y + z.h) - Math.max(b.y, z.y);
+        if (ix > 4 && iy > 4) { out.push({ text: label, zone: z.name }); return; }
+      }
+    };
+    const walk = document.createTreeWalker(stage, NodeFilter.SHOW_TEXT);
+    for (let n; (n = walk.nextNode());) {
+      const el = n.parentElement;
+      if (!n.textContent.trim() || !el.closest('.scene') || el.closest('.wm,#safe') || !seen(el)) continue;
+      const block = el.closest('.h1,.h2,.h3,.p,.small,.kick,.pill,.num,.fact,.row,.chk,.bub,.chipx,.logo,.scr') || el;
+      range.selectNodeContents(n);
+      for (const r of range.getClientRects()) hit(r, block.textContent.trim().replace(/\s+/g, ' ').slice(0, 40));
+    }
+    stage.querySelectorAll('.scene .logo img, .scene .pill img').forEach(img => seen(img) && hit(img.getBoundingClientRect(), 'logo'));
+    return out.filter((x, i) => out.findIndex(y => y.text === x.text && y.zone === x.zone) === i);
+  };
+
   /* ---------- mount ---------- */
   function mount() {
     if (RENDER) {
@@ -258,15 +292,12 @@
     document.title = `${S.title || S.id || 'Reel'} · Reel Studio`;
     const wrap = document.createElement('div'); wrap.id = 'wrap';
     const safe = document.createElement('div'); safe.id = 'safe';
-    // Approximate overlay zones shared by Facebook/Instagram Reels and TikTok.
-    safe.innerHTML = `<div style="left:0;right:0;top:0;height:220px"><span>Top UI</span></div>
-      <div style="left:0;right:0;bottom:0;height:420px"><span>Caption / CTA</span></div>
-      <div style="right:0;width:150px;top:900px;height:600px"><span>Buttons</span></div>`;
+    safe.innerHTML = ZONES.map(z => `<div style="left:${z.x}px;top:${z.y}px;width:${z.w}px;height:${z.h}px"><span>${z.name}</span></div>`).join('');
     stage.appendChild(safe);
     wrap.appendChild(stage);
     const ctl = document.createElement('div'); ctl.id = 'ctl';
     ctl.innerHTML = `<button id="pp">▶ Play</button><input id="sc" type="range" min="0" max="${window.DURATION}" step="0.01" value="0"><span id="tm"></span>
-      <button id="sz">Safe zones</button><button id="lp" class="on">Loop</button>
+      <button id="sz" title="${(window.PLATFORMS || []).join(' + ')}">Safe zones${window.PLATFORMS ? ' · ' + window.PLATFORMS.length : ''}</button><button id="lp" class="on">Loop</button>
       <div style="width:100%;display:flex;gap:6px;flex-wrap:wrap;justify-content:center">${window.SCENES.map((x, i) => `<button data-j="${x.s}" title="${voText(x.vo).replace(/"/g, '&quot;')}">${i + 1} · ${x.type} · ${x.s.toFixed(1)}s</button>`).join('')}</div>`;
     document.body.append(wrap, ctl);
     const fit = () => {
