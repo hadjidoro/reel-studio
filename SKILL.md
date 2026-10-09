@@ -10,7 +10,7 @@ disable-model-invocation: true
 Collaborative, spec-driven video pipeline:
 **profile (context + links) → campaign (platforms, theme, count) → concepts ✋ → specs → storyboards ✋ → MP4s**
 
-✋ marks the two points where you stop and wait for the user's approval. Every video is a JSON spec, and the engine turns it into animated, brand-styled scenes (Chrome frame capture + ffmpeg).
+✋ marks the two points where you stop and wait for the user's approval. Every video is a JSON spec, and the engine turns it into animated, brand-styled scenes. Final videos are rendered through [HyperFrames](https://github.com/heygen-com/hyperframes), which seeks the engine frame by frame on parallel workers and encodes with ffmpeg.
 
 The user started this skill on purpose. Run the steps below in order. If they passed arguments (e.g. `/reel-studio 3 tiktoks about our new pricing`), use them to pre-fill answers, but still confirm them.
 
@@ -164,6 +164,16 @@ Write one spec per approved concept in the campaign's `specs/NN-slug.json`. Befo
 - Mock UIs only: never real users' names, numbers or photos.
 - For **variants**, write each one as a full spec file, then note in `brief.md` which hook each file tests.
 - Give each spec a `captions` entry for every platform it targets, following that platform's preset.
+- **Default to the modern look** unless the brand calls for something calmer:
+  - `"style": "bold"` and brand `"background": "mesh"`;
+  - `slam` or `explode` reveals on hooks and punchlines;
+  - one transition family per video (`zoom`, `chroma`, `push`, `whip` or `blur`);
+  - `"subtitleStyle": "pill"`;
+  - `stories: true` on photo scenes;
+  - `card: "proof"` on testimonials;
+  - `"endStyle": "brand"`.
+
+  Fields are in `reference/spec-format.md`.
 
 Preview the specs:
 
@@ -197,7 +207,16 @@ Then give the user `out/index.html`. It's a gallery of every storyboard, linking
 
 ```bash
 $REEL render --all                      # voice from brand.json; --voice NAME to override, "voice": false in a spec to silence it
+$REEL render 03 --quality draft         # about 2× faster, for a quick look at motion before the final render
 ```
+
+- Rendering goes through HyperFrames (installed into the skill on first use; its telemetry is switched off).
+  - `--quality draft|looks|delivery` sets the encode quality. `looks` is the default.
+  - `--workers N` sets the number of parallel workers. The default is automatic.
+  - `--crf N` sets the final delivery encode. The default is 22; lower means bigger and sharper.
+  - `--verbose` shows HyperFrames' log.
+- If a HyperFrames render fails, say so, then retry once with `--engine classic`, the previous renderer, kept for one release.
+- `out/<id>/hf/` is the generated HyperFrames project. Don't edit it; edit the spec.
 
 Each video gets:
 - `out/<id>/<id>.mp4` (1080×1920, 30 fps, H.264 + AAC);

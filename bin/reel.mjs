@@ -128,9 +128,15 @@ html,body{margin:0;width:1080px;height:1920px;overflow:hidden;background:var(--b
 }
 function renderHf(dir, silent, fps) {
   const quality = typeof flags.quality === 'string' ? flags.quality : 'looks';
-  const r = spawnSync(hyperframesBin(), ['render', '--workers', String(flags.workers || 'auto'), '--quality', quality, '--fps', String(fps), '--output', silent],
+  const master = silent.replace(/\.mp4$/, '.master.mp4');
+  const r = spawnSync(hyperframesBin(), ['render', '--workers', String(flags.workers || 'auto'), '--quality', quality, '--fps', String(fps), '--output', master],
     { cwd: dir, stdio: flags.verbose ? 'inherit' : ['ignore', 'ignore', 'inherit'], env: HF_ENV });
-  if (r.status !== 0 || !fs.existsSync(silent)) die(`HyperFrames render failed in ${dir}. Re-run with --verbose, or use --engine classic.`);
+  if (r.status !== 0 || !fs.existsSync(master)) die(`HyperFrames render failed in ${dir}. Re-run with --verbose, or use --engine classic.`);
+  // HyperFrames masters at a very high bitrate, and film grain makes that ~17 Mbps. A delivery encode tuned for grain
+  // looks the same and is about 5× smaller; the platforms re-encode uploads anyway.
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', master, '-c:v', 'libx264', '-preset', 'medium', '-tune', 'grain', '-crf', String(flags.crf || 22),
+    '-pix_fmt', 'yuv420p', '-an', '-movflags', '+faststart', silent]);
+  fs.rmSync(master, { force: true });
 }
 
 async function browser() {
@@ -287,7 +293,7 @@ async function openPage(br, player) {
 /* ---------- commands ---------- */
 async function doctor() {
   const rows = [
-    ['node ≥ 18', +process.versions.node.split('.')[0] >= 18, process.versions.node],
+    ['node ≥ 22', +process.versions.node.split('.')[0] >= 22, process.versions.node + ' (HyperFrames needs 22+)'],
     ['ffmpeg', has('ffmpeg'), has('ffmpeg') ? execFileSync('ffmpeg', ['-version']).toString().split('\n')[0] : 'brew install ffmpeg / apt install ffmpeg'],
     ['ffprobe', has('ffprobe'), ''],
     ['chrome', !!chromePath(), chromePath() || 'install Chrome or set CHROME_PATH'],

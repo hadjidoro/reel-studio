@@ -8,8 +8,27 @@ body.render{width:1080px;height:1920px;overflow:hidden}
     radial-gradient(700px 700px at 0% 90%,color-mix(in srgb,var(--accent) 12%,transparent),transparent 70%),
     linear-gradient(160deg,var(--bg),var(--bg2) 60%,var(--bg))}
 .scene{position:absolute;inset:0}
-/* scenes are transparent over the stage; ones that move or wipe in carry the stage background so they cover the outgoing scene */
-.scene[data-tr=push],.scene[data-tr=wipe],.scene[data-tr=whip],.scene[data-tr=zoom]{background:inherit}
+/* scenes are transparent over the stage; ones that move or wipe in carry the stage background so they cover the outgoing scene.
+   zoom, chroma and blur fade or clip the outgoing scene themselves, so they stay transparent (a carried background would show its edge) */
+.scene[data-tr=push],.scene[data-tr=wipe],.scene[data-tr=whip]{background:inherit}
+/* background "flat" and "mesh": a plain stage; the mesh is its own layer, so scenes stay transparent and every transition moves over it */
+.stage.bg-flat,.stage.bg-mesh{background:var(--bg)}
+.stage.bg-mesh .scene{background:none}
+.bgfx{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+/* mesh: ported from HyperFrames mesh-gradient-bg — three soft brand-coloured fields over a dark vertical gradient, moved by render(t) */
+.mesh{position:absolute;left:-216px;top:-384px;width:1512px;height:2688px;background:linear-gradient(180deg,var(--bg2) 0%,var(--bg) 55%,color-mix(in srgb,var(--bg) 78%,#000) 100%)}
+.mesh i{position:absolute;left:0;top:0;width:2100px;height:2100px;border-radius:50%}
+.mesh i:nth-child(1){background:radial-gradient(closest-side,color-mix(in srgb,var(--accent) 34%,transparent) 0 40%,color-mix(in srgb,var(--accent) 13%,transparent) 68%,transparent)}
+.mesh i:nth-child(2){background:radial-gradient(closest-side,color-mix(in srgb,var(--accent2) 22%,transparent) 0 36%,color-mix(in srgb,var(--accent2) 8%,transparent) 66%,transparent)}
+.mesh i:nth-child(3){background:radial-gradient(closest-side,color-mix(in srgb,color-mix(in srgb,var(--text) 22%,var(--bg)) 85%,transparent) 0 44%,color-mix(in srgb,color-mix(in srgb,var(--text) 22%,var(--bg)) 30%,transparent) 72%,transparent)}
+.vig{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 45%,transparent 45%,color-mix(in srgb,color-mix(in srgb,var(--bg) 78%,#000) 75%,transparent) 100%)}
+/* grain: ported from HyperFrames grain-overlay (fractal-noise tile, stepped per frame by render(t)) */
+.grain{position:absolute;left:-50%;top:-50%;width:200%;height:200%;opacity:.09;background:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E") 0 0/512px 512px}
+.fxdefs{position:absolute;width:0;height:0}
+/* chroma transition overlays (HyperFrames chromatic-aberration-wipe) */
+.fx-sheen,.fx-rgb{position:absolute;inset:0;z-index:35;pointer-events:none;display:none}
+.fx-sheen{background:linear-gradient(100deg,transparent 30%,color-mix(in srgb,var(--text) 50%,transparent) 50%,transparent 70%);mix-blend-mode:screen}
+.fx-rgb{background:linear-gradient(90deg,color-mix(in srgb,var(--accent2) 35%,transparent),transparent 40%,transparent 60%,rgba(34,211,238,.35))}
 .bg{position:absolute;left:0;right:0;top:0;height:1250px;background-size:cover;background-position:center;-webkit-mask-image:linear-gradient(#000 72%,transparent);transform-origin:50% 40%}
 .bg.full{height:1920px;-webkit-mask-image:none}
 .shade{position:absolute;inset:0;background:linear-gradient(180deg,color-mix(in srgb,var(--bg) 55%,transparent) 0%,color-mix(in srgb,var(--bg) 20%,transparent) 35%,color-mix(in srgb,var(--bg) 85%,transparent) 70%,color-mix(in srgb,var(--bg) 97%,transparent) 100%)}
@@ -68,11 +87,70 @@ body.render{width:1080px;height:1920px;overflow:hidden}
 .av img{width:100%;height:100%;object-fit:cover}
 .who b{display:block;font-weight:800;font-size:42px}
 .who small{display:block;font-weight:500;font-size:30px;color:var(--muted);margin-top:4px}
+/* kinetic reveals: slam scales about the line's centre (its left edge when the text is left-aligned) */
+.box:not(.center) [data-a=slam]{transform-origin:0 50%}
+.scene.bold [data-a=slam],.center [data-a=slam]{transform-origin:50% 50%}
+.wd{display:inline-block;white-space:nowrap}
+.wd .w{transform-origin:50% 55%}
+/* style "bold": bigger centred headlines in a 860 px column that stays left of the platforms' button rail */
+.scene.bold .box{left:50px;right:auto;width:860px;text-align:center}
+.scene.bold .h1{font-size:156px;line-height:.96;letter-spacing:-.045em;text-shadow:0 8px 28px rgba(0,0,0,.45)}
+.scene.bold .h2{font-size:108px;line-height:1.02;letter-spacing:-.04em;text-shadow:0 6px 24px rgba(0,0,0,.4)}
+.scene.bold .p{font-size:46px}
+.scene.bold .kick{background:color-mix(in srgb,var(--accent) 12%,transparent);border:3px solid var(--accent);padding:16px 32px;letter-spacing:.18em}
+.scene.bold .kick:before{display:none}
+.scene.bold .brule{width:360px;height:10px;border-radius:10px;background:var(--accent);margin:48px auto 0}
+.scene.bold .rule{flex-direction:column;align-items:center;gap:44px}
+.scene.bold .num{font-size:220px}
+.scene.bold .badge{transform:none}
+.spw,.cuw,.btnw{display:inline-block}
+.now.glow{text-shadow:0 12px 40px color-mix(in srgb,var(--accent) 32%,transparent)}
+.now .aff{font-size:.5em;letter-spacing:-.02em;margin-left:.06em;color:color-mix(in srgb,var(--accent) 82%,var(--text))}
+/* cta-close */
+.ctaw{position:relative;display:flex;justify-content:center}
+.cglow{position:absolute;left:50%;top:50%;width:700px;height:300px;margin:-150px 0 0 -350px;border-radius:50%;background:radial-gradient(ellipse at 50% 50%,color-mix(in srgb,var(--accent) 45%,transparent) 0%,transparent 70%);opacity:0}
+.pill.big{position:relative;font-size:76px;padding:30px 64px 32px;letter-spacing:-.02em;box-shadow:0 20px 50px color-mix(in srgb,var(--accent) 35%,transparent)}
+/* logo-brand-close */
+.lbcbox{left:50px;right:auto;width:860px}
+.logo.lbc{letter-spacing:-.05em;transform-origin:50% 100%;white-space:nowrap}
+.logo.lbc .acc{color:var(--accent)}
+/* photo stories */
+.stories{position:absolute;left:80px;top:250px;width:840px;height:8px;display:flex;gap:14px}
+.trk{position:relative;flex:1 1 0;height:8px;border-radius:8px;background:color-mix(in srgb,var(--text) 25%,transparent);overflow:hidden}
+.trk .fill{position:absolute;inset:0;background:var(--text);transform:scaleX(0)}
+.scap{position:absolute;left:80px;width:820px}
+.scap .cnt{display:inline-block;padding:10px 16px 9px;border-radius:10px;background:color-mix(in srgb,var(--bg) 78%,transparent);color:var(--accent);font-size:34px;font-weight:800;letter-spacing:.2em;line-height:1;margin-bottom:18px}
+.scap .mask{overflow:hidden;padding-bottom:12px}
+.scap .big{font-weight:900;letter-spacing:-.05em;line-height:.95;color:var(--text);text-shadow:0 6px 30px rgba(0,0,0,.35)}
+.scap .ul{width:120px;height:10px;border-radius:10px;margin-top:22px;background:var(--accent)}
+/* testimonial proof card */
+.srf{display:flex;align-items:center;justify-content:center;gap:34px;margin-bottom:44px}
+.srf-stars{position:relative;width:500px}
+.srf-l{display:flex}
+.srf-base{color:color-mix(in srgb,var(--text) 18%,transparent)}
+.srf-fill{position:absolute;inset:0;color:var(--accent);clip-path:inset(0 100% 0 0)}
+.srf-c{display:block;flex:1 1 0;aspect-ratio:1;padding:0 6px}
+.srf-c svg{display:block;width:100%;height:100%;fill:currentColor}
+.srf-v{font-weight:800;font-size:64px;letter-spacing:-.04em;font-variant-numeric:tabular-nums;color:var(--text)}
+.tcard.proof{background:color-mix(in srgb,var(--bg2) 92%,transparent);border-color:color-mix(in srgb,var(--text) 14%,transparent);box-shadow:0 30px 80px rgba(0,0,0,.35);padding:56px 60px;border-radius:36px}
+.tq-glyph{font-size:120px;font-weight:900;line-height:.6;height:62px;color:var(--accent)}
+.tcard.proof .quote{font-size:58px;line-height:1.18;letter-spacing:-.02em}
+.tq-em{position:relative;display:inline-block;white-space:nowrap}
+.tq-em .acc{position:relative;z-index:1}
+.tq-mark{position:absolute;left:-2%;bottom:-.14em;width:104%;height:.24em;overflow:visible;z-index:2}
+.tq-mark path{fill:none;stroke:var(--accent);stroke-width:4.5;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:100;stroke-dashoffset:100;opacity:0}
+.tcard.proof .av{width:92px;height:92px;font-size:34px}
+.tcard.proof .who b{font-size:36px}
+.tcard.proof .who small{font-size:28px}
 /* subtitles */
 .subs{position:absolute;left:60px;right:60px;text-align:center;z-index:40;pointer-events:none}
 .subs .chunk{display:inline-block;font-size:66px;padding:12px 26px;border-radius:26px;background:rgba(0,0,0,.42)}
 .subs .chunk>span{display:inline-block;font-weight:800;font-size:66px;line-height:1.15;color:#fff;-webkit-text-stroke:5px #000;paint-order:stroke fill;text-shadow:0 4px 16px rgba(0,0,0,.55)}
 .subs .chunk>span.on{color:var(--accent)}
+/* subtitleStyle "pill" (HyperFrames caption-pill-karaoke) */
+.subs.spill .chunk{display:inline-flex;flex-wrap:wrap;justify-content:center;column-gap:18px;max-width:760px;padding:16px 34px 20px;border-radius:26px;background:color-mix(in srgb,var(--bg) 86%,transparent);border:2px solid color-mix(in srgb,var(--text) 12%,transparent);box-shadow:0 14px 40px rgba(0,0,0,.35)}
+.subs.spill .chunk>span{font-size:58px;font-weight:800;letter-spacing:-.02em;line-height:1.18;color:var(--text);-webkit-text-stroke:0;text-shadow:none;white-space:nowrap}
+.subs.spill .chunk>span.on{color:var(--accent)}
 /* chat */
 .bub{max-width:760px;font-size:40px;line-height:1.3;font-weight:500;padding:26px 32px;border-radius:34px;margin-bottom:26px;color:#1d1a17;background:#fff;box-shadow:0 10px 30px rgba(0,0,0,.25)}
 .bub.me{background:#d9fdd3;margin-left:auto}

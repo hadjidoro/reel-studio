@@ -6,6 +6,7 @@
   "tagline": "Free · No middleman",
   "lang": "en",
   "voice": null,
+  "background": "mesh",
   "font": { "family": "Inter", "google": "Inter:wght@400;500;600;700;800;900" },
   "colors": {
     "bg": "#1d1a17",

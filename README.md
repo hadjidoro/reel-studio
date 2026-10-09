@@ -26,7 +26,7 @@ A collaborative [Claude Code](https://claude.com/claude-code) skill for short ve
   - a browser player you can scrub, with a safe-zone overlay;
   - a storyboard image per video;
   - a gallery page per campaign.
-- **Render:** 1080×1920 30 fps H.264 MP4s, each with a cover image. The voiceover can be macOS TTS, your own recording, or a music bed.
+- **Render:** 1080×1920 30 fps H.264 MP4s, each with a cover image, rendered through [HyperFrames](https://github.com/heygen-com/hyperframes) on parallel workers (`--quality draft` for quick checks). The voiceover can be macOS TTS, your own recording, or a music bed.
 - **Nothing is versioned:** the workspace's own `.gitignore` keeps the profile, specs and renders out of git.
 
 ## Install
@@ -57,7 +57,7 @@ ln -s <skill folder>/bin/reel ~/.local/bin/reel   # or any directory on your PAT
 ```
 
 **Requirements:**
-- Node 18 or later
+- Node 22 or later (HyperFrames, the renderer, needs it)
 - ffmpeg
 - Google Chrome or Chromium. If it's in an unusual location, set `CHROME_PATH`.
 - macOS `say`, only for the voiceover
@@ -80,7 +80,7 @@ reel profile                     # summary of the saved profile
 reel campaign new "Back to school" --platforms facebook,tiktok,linkedin --mode series --count 3
 reel preview --all --open        # player.html + storyboard.jpg per video, plus the campaign gallery, with safe-zone and caption checks
 reel frames 03 --times 2,4.5     # exact stills
-reel render --all                # MP4 + cover + caption-<platform>.txt
+reel render --all                # MP4 + cover + caption-<platform>.txt (HyperFrames; --engine classic for the old renderer)
 reel render 03 --voice Thomas    # with text-to-speech voiceover (and subtitles if the spec enables them)
 reel campaign list               # list campaigns; any command takes --campaign NAME, and the newest is the default
 ```
