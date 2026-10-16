@@ -10,7 +10,9 @@ disable-model-invocation: true
 Collaborative, spec-driven video pipeline:
 **profile (context + links) → campaign (platforms, theme, count) → concepts ✋ → specs → storyboards ✋ → MP4s**
 
-✋ marks the two points where you stop and wait for the user's approval. Every video is a JSON spec, and the engine turns it into animated, brand-styled scenes. Final videos are rendered through [HyperFrames](https://github.com/heygen-com/hyperframes), which seeks the engine frame by frame on parallel workers and encodes with ffmpeg.
+✋ marks the two points where you stop and wait for the user's approval. Every video is a JSON spec, and the engine turns it into animated, brand-styled scenes. The user picks the video engine per campaign:
+- **HyperFrames** (default): [HyperFrames](https://github.com/heygen-com/hyperframes) seeks the engine (`engine/`) frame by frame on parallel workers and encodes with ffmpeg.
+- **Remotion**: the same scene types written as React components (`remotion/src/`), with spring-based pops, played in the Remotion Player and rendered with [Remotion](https://www.remotion.dev).
 
 The user started this skill on purpose. Run the steps below in order. If they passed arguments (e.g. `/reel-studio 3 tiktoks about our new pricing`), use them to pre-fill answers, but still confirm them.
 
@@ -125,11 +127,19 @@ Ask everything in **one AskUserQuestion call** with these questions:
    - **Variants**: N versions of one message with different hooks, for A/B testing.
 4. **How many**: 3 (Recommended), 1, 5, or 10 at most.
 
+Then ask the **engine** in a second AskUserQuestion call (AskUserQuestion takes at most 4 questions):
+- **HyperFrames (Recommended)**: the default engine; no extra install.
+- **Remotion**: React-based scenes with spring motion, rendered by Remotion. Installs about 200 MB into the skill the first time. Remotion is free for individuals, non-profits and companies of up to 3 people; larger for-profit companies need a [Remotion company license](https://www.remotion.dev/license). Say this in the option's description.
+
+Both engines read the same specs, scene types and brand, so this choice doesn't change how you write the videos. If the user already named an engine (e.g. `/reel-studio 3 tiktoks with remotion`), skip the question.
+
 Create the campaign:
 
 ```bash
-$REEL campaign new "Back to school promo" --platforms facebook,tiktok --mode series --count 3
+$REEL campaign new "Back to school promo" --platforms facebook,tiktok --mode series --count 3 --engine hyperframes   # or remotion
 ```
+
+The engine is saved in `campaign.json` and used by `preview`, `frames` and `render`. `--engine NAME` on one command overrides it.
 
 Read the preset of each chosen platform in `reference/platforms/<id>.json`. It gives the platform's safe zones, length range, caption limits, hashtag range and tone. One master video serves every platform, so:
 - aim for a length inside every platform's sweet spot where possible, and say so when one platform is a stretch;
@@ -199,6 +209,8 @@ Fix them and re-preview.
 
 Use `$REEL frames <spec> --times 4.2,6` to inspect exact moments.
 
+Storyboards and players come from the campaign's engine, so what the user approves is what renders. If the engine changes after approval, preview again and show the new storyboards before rendering.
+
 Then give the user `out/index.html`. It's a gallery of every storyboard, linking to each player, where they can play, scrub, step frame by frame and toggle the **Safe zones** overlay.
 
 **Stop and wait.** The user approves everything, or lists edits per video. Iterate by editing specs, never the generated HTML. Render only the approved videos.
@@ -210,13 +222,13 @@ $REEL render --all                      # voice from brand.json; --voice NAME to
 $REEL render 03 --quality draft         # about 2× faster, for a quick look at motion before the final render
 ```
 
-- Rendering goes through HyperFrames (installed into the skill on first use; its telemetry is switched off).
-  - `--quality draft|looks|delivery` sets the encode quality. `looks` is the default.
+- Rendering uses the campaign's engine. Each engine is installed into the skill on first use.
+  - `--quality draft|looks|delivery` sets the encode quality. `looks` is the default (Remotion treats `delivery` like `looks`).
   - `--workers N` sets the number of parallel workers. The default is automatic.
-  - `--crf N` sets the final delivery encode. The default is 22; lower means bigger and sharper.
-  - `--verbose` shows HyperFrames' log.
-- If a HyperFrames render fails, say so, then retry once with `--engine classic`, the previous renderer, kept for one release.
-- `out/<id>/hf/` is the generated HyperFrames project. Don't edit it; edit the spec.
+  - `--crf N` sets the final encode. The default is 22 for HyperFrames and 20 for Remotion; lower means bigger and sharper.
+  - `--verbose` shows the engine's log.
+- **HyperFrames**: its telemetry is switched off. `out/<id>/hf/` is the generated HyperFrames project; don't edit it, edit the spec. If a render fails, say so, then retry once with `--engine classic`, the previous renderer, kept for one release.
+- **Remotion**: the composition is bundled once per `render` into `out/.remotion/`, with the workspace `assets/` as its public folder. Remotion renders at 30 fps only. If a render fails, say so and show the error; don't silently switch engines, because the other engine's motion differs from the approved storyboards.
 
 Each video gets:
 - `out/<id>/<id>.mp4` (1080×1920, 30 fps, H.264 + AAC);

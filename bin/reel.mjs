@@ -9,16 +9,17 @@
  *                                        --facebook/--website/--code still work as aliases)
  *   reel profile                         one-screen summary of the saved profile (start of every run)
  *   reel sources [sync|fetched]          list links; sync clones/pulls GitHub repos; fetched stamps the fetch date
- *   reel campaign new <theme> [--platforms facebook,tiktok] [--mode series|variants] [--count 3]
+ *   reel campaign new <theme> [--platforms facebook,tiktok] [--mode series|variants] [--count 3] [--engine hyperframes|remotion]
  *   reel campaign [list]                 list campaigns (newest last)
  *   reel list                            list the campaign's specs with scene count and duration
  *   reel preview <spec…|--all> [--open]  build player.html + storyboard.jpg per spec
  *   reel frames <spec> --times 1,2.5     save individual stills
- *   reel render <spec…|--all> [--voice NAME] [--rate 185] [--fps 30] [--jobs 3]
+ *   reel render <spec…|--all> [--voice NAME] [--rate 185] [--fps 30] [--jobs 3] [--engine hyperframes|remotion|classic]
  *   reel gallery                         rebuild out/index.html (all players, storyboards, videos, captions)
  *
  * Workspace resolution: --ws, $REEL_WS, nearest ancestor containing .claude/reel-studio, else ./.claude/reel-studio.
  * Campaign resolution (list/preview/frames/render/gallery): --campaign NAME|PART, else the newest campaign.
+ * Engine: the campaign's (campaign.json "engine", default hyperframes); --engine overrides for one command.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -76,11 +77,68 @@ function hyperframesBin() {
   }
   return bin;
 }
+/* ---------- engines: hyperframes (default), remotion, classic. Chosen per campaign; --engine overrides. ---------- */
+const ENGINES = ['hyperframes', 'remotion', 'classic'];
 const engineName = () => {
-  const e = typeof flags.engine === 'string' ? flags.engine : 'hyperframes';
-  if (!['hyperframes', 'classic'].includes(e)) die('--engine must be hyperframes or classic');
+  const e = typeof flags.engine === 'string' ? flags.engine : campaign().engine || 'hyperframes';
+  if (!ENGINES.includes(e)) die(`--engine must be one of: ${ENGINES.join(', ')}`);
   return e;
 };
+/* ---------- Remotion: remotion/ is its own package (React scenes + @remotion/*), installed on first use ---------- */
+const RM = path.join(SKILL, 'remotion');
+const RM_VERSION = JSON.parse(fs.readFileSync(path.join(RM, 'package.json'), 'utf8')).dependencies.remotion;
+const rmInstalled = () => { try { return JSON.parse(fs.readFileSync(path.join(RM, 'node_modules', 'remotion', 'package.json'), 'utf8')).version === RM_VERSION; } catch { return false; } };
+function ensureRemotion() {
+  if (rmInstalled()) return;
+  log(`• Installing Remotion ${RM_VERSION} into the skill folder (one time, about a minute)…`);
+  const r = spawnSync('npm', [fs.existsSync(path.join(RM, 'package-lock.json')) ? 'ci' : 'install', '--no-audit', '--no-fund', '--silent'], { cwd: RM, stdio: 'inherit' });
+  if (r.status !== 0 || !rmInstalled()) die('npm install failed in ' + RM);
+}
+const rmImport = async name => import(pathToFileURL(createRequire(path.join(RM, 'package.json')).resolve(name)).href);
+/** The Player page script, bundled with esbuild and cached until a source file changes. */
+async function remotionPlayerJs() {
+  ensureRemotion();
+  const src = path.join(RM, 'src'), files = fs.readdirSync(src).sort();
+  const key = files.map(f => `${f}:${fs.statSync(path.join(src, f)).mtimeMs}`).join('|') + RM_VERSION;
+  const cache = path.join(RM, '.cache', 'player.js'), stamp = cache + '.key';
+  if (fs.existsSync(cache) && fs.existsSync(stamp) && fs.readFileSync(stamp, 'utf8') === key) return fs.readFileSync(cache, 'utf8');
+  const esbuild = await rmImport('esbuild');
+  const r = await esbuild.build({ entryPoints: [path.join(src, 'player.jsx')], bundle: true, format: 'iife', jsx: 'automatic', minify: true, write: false,
+    define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'error', absWorkingDir: RM });
+  const js = r.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
+  fs.mkdirSync(path.dirname(cache), { recursive: true });
+  fs.writeFileSync(cache, js); fs.writeFileSync(stamp, key);
+  return js;
+}
+let rmBundle;
+/** Webpack bundle of the composition with the workspace assets as its public folder; built once per command. */
+async function remotionBundle() {
+  if (rmBundle) return rmBundle;
+  ensureRemotion();
+  const work = path.join(OUT(), '.remotion'), pub = path.join(work, 'public');
+  fs.rmSync(work, { recursive: true, force: true });
+  fs.mkdirSync(pub, { recursive: true });
+  if (fs.existsSync(path.join(WS, 'assets'))) fs.cpSync(path.join(WS, 'assets'), path.join(pub, 'assets'), { recursive: true });
+  log('• Bundling the Remotion composition…');
+  const { bundle } = await rmImport('@remotion/bundler');
+  return (rmBundle = await bundle({ entryPoint: path.join(RM, 'src', 'index.jsx'), publicDir: pub, outDir: path.join(work, 'bundle') }));
+}
+async function renderRemotion({ id, spec, plats, clips, fps, silent }) {
+  const b = brand(), fontCss = await localFontCss(b);   // downloads Google fonts into assets/ before the bundle copies them
+  const serveUrl = await remotionBundle();
+  const css = `${fontCss}\n${cssVars(b)}\n${fs.readFileSync(path.join(SKILL, 'engine', 'engine.css'), 'utf8')}\n${b.css || ''}\n${spec.css || ''}`;
+  const inputProps = { brand: b, spec: { ...spec, id }, zones: safeZones(plats), css, fps, assetMode: 'static',
+    voTiming: clips.length ? clips.map(c => ({ start: c.start, end: c.end, text: c.text })) : null };
+  const { selectComposition, renderMedia } = await rmImport('@remotion/renderer');
+  const composition = await selectComposition({ serveUrl, id: 'Reel', inputProps });
+  const draft = flags.quality === 'draft', workers = flags.workers && flags.workers !== 'auto' ? +flags.workers : null;
+  let shown = -1;
+  await renderMedia({ composition, serveUrl, inputProps, codec: 'h264', outputLocation: silent, muted: true, concurrency: workers,
+    crf: +(flags.crf || (draft ? 28 : 20)), x264Preset: draft ? 'veryfast' : 'medium', imageFormat: 'jpeg', jpegQuality: draft ? 70 : 92, pixelFormat: 'yuv420p',
+    logLevel: flags.verbose ? 'verbose' : 'error',
+    onProgress: ({ progress }) => { const p = Math.floor(progress * 10); if (p !== shown && !flags.verbose) { shown = p; process.stdout.write(`\r  rendering ${id} ${p * 10}%`); } } });
+  if (!flags.verbose) process.stdout.write('\r' + ' '.repeat(40) + '\r');
+}
 /** @font-face rules with paths relative to the workspace. Google fonts are downloaded once into assets/fonts/google/. */
 async function localFontCss(b) {
   const f = b.font || {};
@@ -259,11 +317,13 @@ function fontTags(b) {
   for (const src of [].concat(f.files || [])) out += `<style>@font-face{font-family:'${f.family}';src:url('${src.file || src}');font-weight:${src.weight || '100 900'};font-style:normal}</style>`;
   return out;
 }
-function build(file) {
+/** player.html for one spec. Remotion campaigns get the Remotion Player page; the others the engine.js player. */
+async function build(file) {
   const spec = readJSON(file), b = brand(), id = specId(file, spec);
   const outDir = path.join(OUT(), id); fs.mkdirSync(outDir, { recursive: true });
   const css = fs.readFileSync(path.join(SKILL, 'engine', 'engine.css'), 'utf8');
-  const js = fs.readFileSync(path.join(SKILL, 'engine', 'engine.js'), 'utf8') + '\n' + fs.readFileSync(path.join(SKILL, 'engine', 'player.js'), 'utf8');
+  const js = engineName() === 'remotion' ? await remotionPlayerJs()
+    : fs.readFileSync(path.join(SKILL, 'engine', 'engine.js'), 'utf8') + '\n' + fs.readFileSync(path.join(SKILL, 'engine', 'player.js'), 'utf8');
   const safe = o => JSON.stringify(o).replace(/</g, '\\u003c');
   const plats = specPlatforms(spec), zones = safeZones(plats);
   const html = `<!doctype html><html lang="${b.lang || 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -302,7 +362,8 @@ async function doctor() {
   let pup = true; try { ensurePuppeteer(); } catch { pup = false; }
   rows.push(['puppeteer-core', pup, SKILL]);
   let hf = ''; try { hf = execFileSync(hyperframesBin(), ['--version'], { env: HF_ENV }).toString().trim(); } catch {}
-  rows.push([`hyperframes ${HF_VERSION}`, !!hf, hf ? 'default renderer (--engine classic for the old one)' : 'npm install failed']);
+  rows.push([`hyperframes ${HF_VERSION}`, !!hf, hf ? 'default engine' : 'npm install failed']);
+  rows.push([`remotion ${RM_VERSION}`, true, rmInstalled() ? 'installed (campaign new --engine remotion)' : 'optional, installs on first use by a Remotion campaign']);
   for (const [n, ok, info] of rows) log(`${ok ? '✓' : '✖'} ${n.padEnd(28)} ${info}`);
   log(`\nWorkspace: ${WS} ${fs.existsSync(path.join(WS, 'brand.json')) ? '(ready)' : '(not initialised — run reel init)'}`);
   if (fs.existsSync(SRC())) printSources();
@@ -455,7 +516,7 @@ function campaignCmd() {
     if (!all.length) log('No campaigns yet — reel campaign new <theme>');
     for (const c of all) {
       const n = fs.existsSync(path.join(c.dir, 'specs')) ? fs.readdirSync(path.join(c.dir, 'specs')).filter(f => f.endsWith('.json')).length : 0;
-      log(`${c.name.padEnd(44)} ${c.mode.padEnd(9)} ${String(n).padStart(2)}/${c.count} specs  ${c.platforms.join(',')}`);
+      log(`${c.name.padEnd(44)} ${c.mode.padEnd(9)} ${String(n).padStart(2)}/${c.count} specs  ${(c.engine || 'hyperframes').padEnd(11)} ${c.platforms.join(',')}`);
     }
     return;
   }
@@ -466,6 +527,8 @@ function campaignCmd() {
   if (!['series', 'variants'].includes(mode)) die('--mode must be series or variants');
   const count = flags.count === undefined ? 3 : +flags.count;
   if (!Number.isInteger(count) || count < 1 || count > 10) die('--count must be 1–10');
+  const engine = typeof flags.engine === 'string' ? flags.engine : 'hyperframes';
+  if (!ENGINES.includes(engine)) die(`--engine must be one of: ${ENGINES.join(', ')}`);
   const platforms = [...new Set(String(typeof flags.platforms === 'string' ? flags.platforms : 'facebook').split(',').filter(x => x.trim()).map(n => preset(n).id))];
   if (!fs.existsSync(path.join(WS, 'brand.json'))) die(`No profile in ${WS}. Run: reel init`);
   adoptLegacySpecs();
@@ -474,12 +537,12 @@ function campaignCmd() {
   const dir = path.join(CAMPS(), name);
   if (fs.existsSync(dir)) die('Campaign already exists: ' + name);
   fs.mkdirSync(path.join(dir, 'specs'), { recursive: true });
-  const meta = { theme, platforms, mode, count, created };
+  const meta = { theme, platforms, mode, count, engine, created };
   fs.writeFileSync(path.join(dir, 'campaign.json'), JSON.stringify(meta, null, 2) + '\n');
   const brief = fs.readFileSync(path.join(SKILL, 'templates', 'brief.md'), 'utf8')
-    .replace(/\{\{(\w+)\}\}/g, (m, k) => ({ name, theme, platforms: platforms.join(', '), mode, count, date: created.slice(0, 10) }[k] ?? m));
+    .replace(/\{\{(\w+)\}\}/g, (m, k) => ({ name, theme, platforms: platforms.join(', '), mode, count, engine, date: created.slice(0, 10) }[k] ?? m));
   fs.writeFileSync(path.join(dir, 'brief.md'), brief);
-  log(`✓ Campaign ${name}\n  ${mode}, ${count} video${count > 1 ? 's' : ''}, ${platforms.join(', ')}\n  ${dir}`);
+  log(`✓ Campaign ${name}\n  ${mode}, ${count} video${count > 1 ? 's' : ''}, ${platforms.join(', ')}, ${engine} engine\n  ${dir}`);
 }
 /** A workspace from before campaigns kept specs/ and out/ at its root: move them into a campaign so they stay reachable. */
 function adoptLegacySpecs() {
@@ -509,7 +572,7 @@ async function preview() {
   const br = await browser();
   try {
     for (const f of files) {
-      const { id, spec, player, outDir, plats } = build(f);
+      const { id, spec, player, outDir, plats } = await build(f);
       const { page, meta, errors } = await openPage(br, player);
       // one settled frame per scene, checked against the platforms' UI zones
       const shots = [], warn = [];
@@ -571,7 +634,7 @@ async function frames() {
   const times = String(flags.times || '0').split(',').map(Number);
   const br = await browser();
   try {
-    const { id, player, outDir } = build(f);
+    const { id, player, outDir } = await build(f);
     const { page } = await openPage(br, player);
     for (const t of times) { await page.evaluate(t => render(t), t); const p = path.join(outDir, `frame-${t}.jpg`); await page.screenshot({ path: p, type: 'jpeg', quality: 85 }); log(p); }
   } finally { await br.close(); }
@@ -581,13 +644,14 @@ const probe = f => +execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'fo
 async function render() {
   if (!has('ffmpeg')) die('ffmpeg not found');
   const files = specFiles(pos), fps = +(flags.fps || 30);
+  log(`• Rendering with ${engineName()}`);
   const br = await browser();
-  const jobs = +(flags.jobs || (engineName() === 'hyperframes' ? 1 : 3));   // HyperFrames already renders each video on parallel workers
+  const jobs = +(flags.jobs || (engineName() === 'classic' ? 3 : 1));   // HyperFrames and Remotion already render each video on parallel workers
   const queue = [...files]; const done = [];
   async function worker() {
     while (queue.length) {
       const f = queue.shift();
-      const { id, spec, player, outDir, plats } = build(f);
+      const { id, spec, player, outDir, plats } = await build(f);
       const { page, meta } = await openPage(br, player);
       // Voiceover is synthesised first so the subtitles follow the real clip timings.
       const voice = spec.voice === false ? null : flags.voice || spec.voice || brand().voice;
@@ -597,6 +661,10 @@ async function render() {
       if (engineName() === 'hyperframes') {
         await page.close();
         renderHf(await buildHf({ id, spec, outDir, plats, meta, clips, fps }), silent, fps);
+      } else if (engineName() === 'remotion') {
+        await page.close();
+        if (fps !== 30) die('The Remotion engine renders at 30 fps.');
+        await renderRemotion({ id, spec, plats, clips, fps, silent });
       } else {
       const ff = spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(fps), '-i', '-',
         '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo', '-shortest', '-c:v', 'libx264', '-preset', 'medium', '-crf', '18',

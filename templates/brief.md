@@ -2,9 +2,9 @@
 
 Campaign `{{name}}` · created {{date}}
 
-| Platforms | Mode | Videos |
-|---|---|---|
-| {{platforms}} | {{mode}} | {{count}} |
+| Platforms | Mode | Videos | Engine |
+|---|---|---|---|
+| {{platforms}} | {{mode}} | {{count}} | {{engine}} |
 
 ## Angle
 Why this theme now, for whom, and the one thing every video should leave the viewer with.

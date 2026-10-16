@@ -1,0 +1,16 @@
+{
+  "name": "reel-studio-remotion",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Remotion engine for reel-studio: the spec's scenes as React components, rendered with @remotion/renderer. Installed on first use.",
+  "dependencies": {
+    "@remotion/bundler": "4.0.528",
+    "@remotion/player": "4.0.528",
+    "@remotion/renderer": "4.0.528",
+    "esbuild": "0.28.1",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "remotion": "4.0.528"
+  },
+  "license": "MIT"
+}
